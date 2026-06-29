@@ -1,0 +1,68 @@
+[project]
+name = "validator"
+version = "0.1.0"
+description = "Nexus-based Bittensor subnet validator."
+requires-python = ">=3.14"
+dependencies = [
+    "attrs>=26.1.0", # previously this was required for Nexus (litestar needed it) #TODO: See if this is still the case
+    "bittensor-nexus-library",
+    "click>=8.3.2",
+    "pydantic-settings>=2.14.0",
+    "python-dotenv>=1.2.2",
+    "sentry-sdk>=2.60.0",
+    "structlog>=25,<27",
+]
+
+[project.scripts]
+validator = "validator.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+# This exclusion is a crucial security measure and MUST NOT be relaxed.
+# This is intended to help avoid pulling in freshly published compromised dependencies.
+exclude-newer = "11 days"
+
+[tool.uv.sources]
+bittensor-nexus-library = { git = "https://github.com/bittensor-church/bittensor-nexus-library.git" }
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.36.1",
+    "ruff",
+    "pytest",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "TC005"]
+preview = true
+explicit-preview-rules = true
+extend-select = ["DOC501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["I", "F401"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+]
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+verboseOutput = true
+useLibraryCodeForTypes = true
+reportMissingTypeStubs = "warning"
+reportUndefinedVariable = "error"
+reportUnusedImport = "warning"
+reportExplicitAny = "none"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src", ".venv/lib/python3.14/site-packages"]

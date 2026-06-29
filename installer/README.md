@@ -1,0 +1,85 @@
+# Refinery Validator Installer
+
+This directory contains scripts to install and maintain a Refinery validator node.
+
+## Prerequisites
+
+- Docker and Docker Compose installed.
+- `cron` running.
+- `curl`, `bash`, and `openssl`.
+- Internet access to GitHub and the configured container registry.
+- Validator wallet with hotkey on disk, funded and registered as needed for the
+  target network and netuid (default location: `~/.bittensor/wallets`).
+  **Coldkey is not required for the validator** so for increased security it should not be present on the validator
+  machine.
+  The recommended layout looks like this:
+
+  ```
+    ~/.bittensor/
+    └── wallets/
+        └── <coldkey-name>/
+            ├── coldkeypub.txt          # public only; OK on validator machine
+            └── hotkeys/
+                └── <hotkey-name>       # private hotkey material; protect this
+  ```
+    There should be no file here:
+    ~/.bittensor/wallets/<coldkey-name>/coldkey
+
+## Quick Installation
+
+```bash
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash
+```
+
+This will:
+1. Create a working directory at `~/refinery-validator/` (default).
+2. Prompt you for configuration values if `.env` does not exist.
+3. Fetch and run `update_compose.sh` once to set up `docker-compose.yml` and start the stack.
+4. Install a cron job that re-runs `update_compose.sh` every 15 minutes so the validator stays up to date.
+
+On first run the installer asks for:
+
+- `BITTENSOR_NETWORK` (default `local`)
+- `HOST_WALLET_DIR` (default `~/.bittensor/wallets`)
+- `BITTENSOR_WALLET_NAME` (default `validator`)
+- `BITTENSOR_WALLET_HOTKEY_NAME` (default `default`)
+- `SENTRY_DSN` (optional, press Enter to skip)
+
+### Environment Variables
+
+Written to `<WORKING_DIRECTORY>/.env` on first run:
+
+- `NETUID` — subnet netuid (default: `1`).
+- `BITTENSOR_NETWORK` — Bittensor network address (e.g. `finney`, `ws://localhost:9944`).
+- `BITTENSOR_WALLET_NAME` / `BITTENSOR_WALLET_HOTKEY_NAME` — wallet identifiers consumed by pylon.
+- `HOST_WALLET_DIR` — host-side path to the Bittensor wallets directory (mounted read-only into pylon).
+- `ENVIRONMENT` — deploy environment suffix used in the validator image name (default: `prod`).
+- `VALIDATOR_PYLON_OPEN_ACCESS_TOKEN` — auto-generated 32-byte hex token shared between validator and pylon.
+- `PYLON_METRICS_TOKEN` — auto-generated 32-byte hex Bearer token used by the local Prometheus to scrape Pylon's `/metrics` endpoint.
+- `PROMETHEUS_PROXY_SECRET_KEY` — auto-generated 32-byte hex signing key for the `bittensor-prometheus-proxy` sidecar that remote-writes metrics to `https://prometheus.bactensor.io`.
+- `SENTRY_DSN` — optional Sentry DSN for the `prometheus-proxy` sidecar; leave empty to disable error reporting.
+
+## Custom Installation
+
+```bash
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
+```
+
+- `ENV_NAME`: branch suffix for `deploy-config-<ENV_NAME>` (defaults to `prod`).
+- `WORKING_DIRECTORY`: where to install (defaults to `~/refinery-validator/`).
+
+Example:
+
+```bash
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash -s -- prod /opt/refinery-validator
+```
+
+## Updates
+
+The validator updates itself automatically every 15 minutes via the cron job installed by the installer script.
+
+## Manual Update
+
+```bash
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/update_compose.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
+```

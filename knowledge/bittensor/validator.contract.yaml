@@ -1,0 +1,118 @@
+# Validator Contract Specification
+
+role: evaluator
+primary_function: "convert miner quality to on-chain weights"
+
+requirements:
+  registration: "hotkey registered on subnet"
+  stake: "sufficient stake for validator_permit"
+  rate_limit: "respect weights_rate_limit"
+
+responsibilities:
+  DO:
+    - define_clear_scoring_criteria
+    - query_or_observe_miners
+    - score_responses_deterministically
+    - normalize_weights_correctly
+    - submit_weights_periodically
+    - handle_timeouts_gracefully
+
+    - apply_anti_gaming_measures
+  
+  DO_NOT:
+    - write_miner_code
+    - implement_reference_solutions
+    - hide_evaluation_logic
+    - maintain_secret_eval_sets
+    - trust_own_ground_truth
+
+design_philosophy:
+  validator_only_development:
+    rule: "ONLY write validator code. NEVER write miner code."
+    rationale:
+      - validator_is_referee
+      - miners_compete_through_innovation
+      - simplicity_breeds_auditability
+    
+    required_components:
+      - configuration
+      - miner_interface_spec
+      - discovery_method
+      - scoring_logic
+      - weight_setting
+      - main_loop
+
+    excludes:
+      - miner_implementation
+      - reference_solutions
+      - shared_synapse_definitions
+
+core_loop:
+  realized_by: nexus_framework
+  steps:
+    1_sync: "metagraph.sync()"
+    2_sample: "query miners or check external data"
+    3_score: "apply scoring algorithm"
+    4_aggregate: "combine into final weights"
+    5_set_weights: "submit to chain"
+    6_wait: "sleep until next cycle"
+  nexus_mapping:
+    1_sync: "neuron routing via pylon cached metagraph"
+    2_sample: "task pipeline (routing → communication → response)"
+    3_score: "developer-provided weighing function"
+    4_aggregate: "developer-provided weighing function"
+    5_set_weights: "weight setter actor → pylon"
+    6_wait: "chain-driven timing (no manual sleep)"
+
+communication:
+  deprecated:
+    - axon
+    - dendrite
+    - synapse
+
+  recommended:
+    protocol: "HTTP/REST"
+    discovery: "miners commit endpoints to chain"
+    realized_by: "nexus handles HTTP communication and neuron discovery via pylon"
+
+scoring_patterns:
+  multi_dimensional:
+    dimensions:
+      - quality
+      - speed
+      - reliability
+      - uniqueness
+      - cost_efficiency
+    formula: "weighted_sum(dimension_scores)"
+  
+  relative_vs_baseline:
+    formula: "(baseline_error - miner_error) / baseline_error"
+  
+  tournament:
+    formula: "1.0 - (rank / n)"
+
+weight_setting:
+  realized_by: "nexus weight setter → pylon (normalization, commit-reveal, retries)"
+  normalization: "weights must sum to 1"
+  conversion:
+    softmax:
+      formula: "exp(score/temp) / sum(exp(scores/temp))"
+      low_temp: "winner-take-most"
+      high_temp: "more equal"
+    
+    inverse:
+      use_when: "lower score is better (CRPS)"
+      formula: "softmax with negative beta"
+  
+  commit_reveal:
+    when_to_use: "ONLY if weight copying proven problem"
+    warning: "mature subnet problem, not default"
+    realized_by: "pylon auto-detects commit-reveal from hyperparams, handles full flow"
+    process:
+      1: "pylon.commit(weights)"
+      2: "pylon handles the rest - fire and forget"
+
+anti_gaming:
+  rate_gaming_detection:
+    method: "check variance of response times"
+    suspicious: "very low variance"
