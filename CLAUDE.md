@@ -11,15 +11,18 @@ This is a monorepo with two **independent** uv projects plus shared local-develo
 
 - `validator/` — Nexus-based subnet validator (own `pyproject.toml`, `uv.lock`, `.venv`); also holds the
   production `Dockerfile`
-- `miner/` — Bittensor subnet miner (own `pyproject.toml`, `uv.lock`, `.venv`)
+- `miner/` — Bittensor subnet miner (own `pyproject.toml`, `uv.lock`, `.venv`); also holds its `Dockerfile`
 - `localnet/` — Local subtensor + pylon + bootstrap + miner fixtures for end-to-end development
 - `installer/` — Copier-templated validator installer scripts (`install.sh.jinja`,
   `update_compose.sh.jinja`, `README.md.jinja`); rendered by `copier copy` when adapting the template
 - `envs/deployed/` — Copier-templated production `docker-compose.yml.jinja` (validator + pylon);
   the rendered repo is promoted on the `deploy-config-prod` branch, with this compose file and the
   installer scripts as the operator-critical files
-- `.github/workflows/` — Copier-templated CI; `build-validator.yml.jinja` builds and pushes the validator
-  image to a registry on push to `deploy-build-*` branches
+- `deploy/` — Linode three-machine deployment (chain + validator + miner over a private VLAN): chain
+  and miner docker-compose files, a shared role-parametrized installer/updater, and a step-by-step
+  `README.md`. The validator role reuses `installer/` + `envs/deployed/`. See `deploy/README.md`
+- `.github/workflows/` — Copier-templated CI; `build-validator.yml.jinja` and `build-miner.yml.jinja`
+  build and push the validator and miner images to a registry on push to `deploy-build-*` branches
 - `copier.yml` — Copier question schema for adapting this template to a concrete subnet
 - `knowledge/` — Bittensor / Nexus / localnet domain knowledge
 - `docs/` — additional documentation

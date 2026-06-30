@@ -1,0 +1,19 @@
+services:
+  subtensor:
+    # ghcr.io/opentensor/subtensor-localnet:devnet-ready - bump by re-resolving the tag's digest
+    # (docker buildx imagetools inspect ... --format '{{json .Manifest.Digest}}').
+    image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    restart: unless-stopped
+    # Bind the RPC/WS ports to the private VLAN IP only - never the public interface.
+    ports:
+      - "${CHAIN_BIND_IP:?}:9944:9944"
+      - "${CHAIN_BIND_IP:?}:9933:9933"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9944'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+# NOTE: subtensor-localnet is an EPHEMERAL devnet chain - it boots a fresh genesis on every start
+# and persists nothing. A restart of this service (or the host) WIPES all chain state, so the subnet
+# must be re-bootstrapped and the validator + miners must re-register. There is intentionally no
+# data volume here. See deploy/README.md ("Chain persistence") before relying on this in place.

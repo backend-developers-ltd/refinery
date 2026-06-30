@@ -23,6 +23,11 @@ don't end up pointed at a different subnet than the one we configured.
 
 Prerequisites: subtensor must be running (cd localnet && docker compose up).
 
+Config (environment variables):
+- BOOTSTRAP_SUBTENSOR_NETWORK: subtensor ws endpoint (default ws://127.0.0.1:9944);
+  point it at a remote chain to bootstrap a multi-host deployment
+- BOOTSTRAP_WALLET_DIR: directory the owner/validator wallets are written to (default ./wallets)
+
 Usage: uv run localnet/bootstrap.py
 """
 
@@ -41,8 +46,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-WALLETS_DIR = Path(__file__).parent / "wallets"
-SUBTENSOR_NETWORK = "ws://127.0.0.1:9944"
+WALLETS_DIR = Path(os.environ.get("BOOTSTRAP_WALLET_DIR", str(Path(__file__).parent / "wallets")))
+SUBTENSOR_NETWORK = os.environ.get("BOOTSTRAP_SUBTENSOR_NETWORK", "ws://127.0.0.1:9944")
 VALIDATOR_STAKE_TAO = 1000.0
 FUND_AMOUNT_TAO = 10_000.0
 

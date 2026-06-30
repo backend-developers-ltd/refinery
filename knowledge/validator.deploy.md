@@ -74,6 +74,8 @@ consistently.
 
    The `build-validator.yml` workflow (triggered on `deploy-build-*`) builds
    the image and pushes it to the registry as `:v0-latest` and `:sha-<commit>`.
+   The same push also fires `build-miner.yml`, building `refinery-miner-<env>`
+   the same way; promoting the miner image is covered in `deploy/README.md`.
 3. Verify in GitHub Actions that the job succeeded and the image landed in the
    registry under `:sha-<commit>`.
 
