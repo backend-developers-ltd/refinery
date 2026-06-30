@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pulls the latest deploy/<ROLE>/docker-compose.yml from the deploy-config-${ENV_NAME} branch
+# Pulls the latest deploy/linode/<ROLE>/docker-compose.yml from the deploy-config-${ENV_NAME} branch
 # and restarts the role's stack if anything changed. Roles: localchain, miner.
 # (The validator role uses the top-level installer/ scripts and envs/deployed/docker-compose.yml.)
 
@@ -21,7 +21,7 @@ GITHUB_URL="https://raw.githubusercontent.com/backend-developers-ltd/refinery/re
 
 TEMP_FILE="$(mktemp "${TMPDIR:-/tmp}/refinery_compose_update.XXXXXX.yml")"
 trap 'rm -f "${TEMP_FILE}"' EXIT
-curl -fsSL "${GITHUB_URL}/deploy-config-${ENV_NAME}/deploy/${ROLE}/docker-compose.yml" > "${TEMP_FILE}"
+curl -fsSL "${GITHUB_URL}/deploy-config-${ENV_NAME}/deploy/linode/${ROLE}/docker-compose.yml" > "${TEMP_FILE}"
 
 LOCAL_FILE="${WORKING_DIRECTORY}/docker-compose.yml"
 

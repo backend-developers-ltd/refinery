@@ -4,9 +4,9 @@ This directory deploys the full Refinery subnet across **three Linode machines**
 
 | Role | Machine | Runs | Source of compose |
 |------|---------|------|-------------------|
-| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) | `deploy/localchain/docker-compose.yml` |
+| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) | `deploy/linode/localchain/docker-compose.yml` |
 | **validator** | `refinery-validator` | validator + pylon + full metrics stack | `envs/deployed/docker-compose.yml` (the standard prod stack) |
-| **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner | `deploy/miner/docker-compose.yml` |
+| **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner | `deploy/linode/miner/docker-compose.yml` |
 
 Linode is just a (more elaborate) **prod instance**: it runs the *same* published images
 (`refinery-validator-prod`, `refinery-miner-prod`) as any other prod deploy — it merely also hosts its
@@ -95,12 +95,12 @@ On **`refinery-chain`**:
 
 ```bash
 mkdir -p ~/refinery-chain && cd ~/refinery-chain
-curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/localchain/.env.example -o .env
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/localchain/.env.example -o .env
 # Edit .env: set CHAIN_BIND_IP to this machine's VLAN IP (e.g. 10.0.0.10)
 nano .env
 
 # Install + start the chain (also installs the 15-min auto-update cron)
-curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/install.sh \
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/install.sh \
   | bash -s -- localchain prod ~/refinery-chain
 ```
 
@@ -200,11 +200,11 @@ On **`refinery-miner`**:
 
 ```bash
 mkdir -p ~/refinery-miner && cd ~/refinery-miner
-curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/miner/.env.example -o .env
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/miner/.env.example -o .env
 # Edit .env: CHAIN_VLAN_IP=10.0.0.10, MINER_VLAN_IP=10.0.0.30, MINER_AXON_PORT=18000, NETUID=2
 nano .env
 
-curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/install.sh \
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/install.sh \
   | bash -s -- miner prod ~/refinery-miner
 ```
 
@@ -249,8 +249,8 @@ blocked — re-check `MINER_AXON_EXTERNAL_IP`/`VALIDATOR_CALLBACK_HOST` and that
 Every machine runs a 15-minute cron job that re-pulls its docker-compose from `deploy-config-prod` and
 restarts the stack **only if the file changed** (i.e. when a new image digest is pinned):
 
-- chain: cron tag `REFINERY_LOCALCHAIN_UPDATE`, compose `deploy/localchain/docker-compose.yml`
-- miner: cron tag `REFINERY_MINER_UPDATE`, compose `deploy/miner/docker-compose.yml`
+- chain: cron tag `REFINERY_LOCALCHAIN_UPDATE`, compose `deploy/linode/localchain/docker-compose.yml`
+- miner: cron tag `REFINERY_MINER_UPDATE`, compose `deploy/linode/miner/docker-compose.yml`
 - validator: cron tag from the top-level installer, compose `envs/deployed/docker-compose.yml`
 
 Force an update now: re-run the relevant `install.sh`/`update_compose.sh`, or
@@ -274,7 +274,7 @@ git push origin master:deploy-build-prod
 digest, smoke-test, pin it into `envs/deployed/docker-compose.yml`, push `master` →
 `deploy-config-prod`.
 
-**Promote the miner image.** Same shape, for `deploy/miner/docker-compose.yml`:
+**Promote the miner image.** Same shape, for `deploy/linode/miner/docker-compose.yml`:
 
 ```bash
 # 1. Resolve the digest of the built image (tag is used once, then discarded)
@@ -282,7 +282,7 @@ docker buildx imagetools inspect \
   ghcr.io/backend-developers-ltd/refinery-miner-prod:sha-<commit> \
   --format '{{json .Manifest.Digest}}'
 
-# 2. Pin it in deploy/miner/docker-compose.yml (the miner service `image:`), replacing the
+# 2. Pin it in deploy/linode/miner/docker-compose.yml (the miner service `image:`), replacing the
 #    sha256:0000... placeholder:
 #    image: ghcr.io/backend-developers-ltd/refinery-miner-${ENVIRONMENT:?}@sha256:<digest>
 

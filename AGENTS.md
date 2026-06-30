@@ -26,9 +26,10 @@ This is a monorepo with two **independent** uv projects plus shared local-develo
 - `envs/deployed/` — Copier-templated production `docker-compose.yml.jinja` (validator + pylon);
   the rendered repo is promoted on the `deploy-config-prod` branch, with this compose file and the
   installer scripts as the operator-critical files
-- `deploy/` — Linode three-machine deployment (chain + validator + miner over a private VLAN): chain
-  and miner docker-compose files, a shared role-parametrized installer/updater, and a step-by-step
-  `README.md`. The validator role reuses `installer/` + `envs/deployed/`. See `deploy/README.md`
+- `deploy/` — multi-machine deployments, one subdirectory per environment. `deploy/linode/` is the
+  three-machine Linode deployment (chain + validator + miner over a private VLAN): chain and miner
+  docker-compose files, a shared role-parametrized installer/updater, and a step-by-step `README.md`.
+  The validator role reuses `installer/` + `envs/deployed/`. See `deploy/linode/README.md`
 - `.github/workflows/` — Copier-templated CI; `build-validator.yml.jinja` and `build-miner.yml.jinja`
   build and push the validator and miner images to a registry on push to `deploy-build-*` branches
 - `copier.yml` — Copier question schema for adapting this template to a concrete subnet

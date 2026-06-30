@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installer for a Refinery Linode deploy role: localchain or miner.
-# Expects a ready .env in the working directory (copy deploy/<ROLE>/.env.example there and edit it
+# Expects a ready .env in the working directory (copy deploy/linode/<ROLE>/.env.example there and edit it
 # before running). Fetches update_compose.sh, runs it once, and installs a cron job that keeps the
 # role's docker-compose.yml in sync with the deploy-config-${ENV_NAME} branch.
 #
@@ -23,13 +23,13 @@ WORKING_DIRECTORY=$(realpath "${WORKING_DIRECTORY}")
 ENV_FILE="${WORKING_DIRECTORY}/.env"
 if [ ! -f "${ENV_FILE}" ]; then
     echo "Error: ${ENV_FILE} not found." >&2
-    echo "Copy deploy/${ROLE}/.env.example there, fill it in, then re-run the installer." >&2
+    echo "Copy deploy/linode/${ROLE}/.env.example there, fill it in, then re-run the installer." >&2
     exit 1
 fi
 
 GITHUB_URL="https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads"
 UPDATE_SCRIPT="${WORKING_DIRECTORY}/update_compose.sh"
-UPDATE_URL="${GITHUB_URL}/deploy-config-${ENV_NAME}/deploy/update_compose.sh"
+UPDATE_URL="${GITHUB_URL}/deploy-config-${ENV_NAME}/deploy/linode/update_compose.sh"
 
 echo "Running update_compose.sh once to ensure it works..."
 curl -fsSL "${UPDATE_URL}" -o "${UPDATE_SCRIPT}"

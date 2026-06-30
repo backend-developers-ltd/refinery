@@ -16,4 +16,4 @@ services:
 # NOTE: subtensor-localnet is an EPHEMERAL devnet chain - it boots a fresh genesis on every start
 # and persists nothing. A restart of this service (or the host) WIPES all chain state, so the subnet
 # must be re-bootstrapped and the validator + miners must re-register. There is intentionally no
-# data volume here. See deploy/README.md ("Chain persistence") before relying on this in place.
+# data volume here. See deploy/linode/README.md ("Chain persistence") before relying on this in place.
