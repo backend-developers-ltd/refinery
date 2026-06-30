@@ -21,8 +21,9 @@ Lightweight, isolated development environment modeling a toy subnet for rapid pr
 
 ## Resources
 
-- **bootstrap.py** — creates owner and validator wallets, sets tempo, disables commit-reveal, registers subnet,
-  registers, and stakes validator
+- **bootstrap.py** — creates owner and validator wallets, sets tempo (also normalizing the genesis
+  subnets 0/1), toggles timelocked commit-reveal via `SUBNET_COMMIT_REVEAL_ENABLED` (off by default for
+  fast-block dev), registers subnet, registers, and stakes validator
 - **miners/miner.template.py** — not runnable; copy to miner-{profile}.py and customize per subnet's needs.
   Distinct from the production miner in `/miner` (separate uv project) — these are localnet-only profile
   simulators

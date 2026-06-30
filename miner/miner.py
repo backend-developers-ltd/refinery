@@ -13,6 +13,11 @@ Config (environment variables):
 - MINER_RESPONSE_DELAY_S: extra seconds to wait before answering (default 0)
 - MINER_NETUID: subnet to register on (default 2)
 - MINER_SUBTENSOR_NETWORK: subtensor ws endpoint (default ws://127.0.0.1:9944)
+- MINER_WALLET_DIR: directory holding the miner wallets (default ../localnet/wallets)
+- MINER_AXON_EXTERNAL_IP: IP advertised on-chain for the axon (default 127.0.0.2);
+  set to the machine's reachable IP for cross-host deployments
+- MINER_AXON_PORT: fixed axon port to serve and advertise (default 0 = pick a free port);
+  set to a fixed port for cross-host deployments behind a firewall
 
 Usage: uv run miner [-n NUM_INSTANCES]
 """
@@ -47,9 +52,13 @@ PORT_RANGE = (10000, 65000)
 # Must match the validator's AsyncHttpNeuronCommunicator target_path
 TARGET_PATH = "/task"
 
-WALLETS_DIR = Path(__file__).resolve().parent.parent / "localnet" / "wallets"
+WALLETS_DIR = Path(
+    os.environ.get("MINER_WALLET_DIR", str(Path(__file__).resolve().parent.parent / "localnet" / "wallets"))
+)
 SUBTENSOR_NETWORK = os.environ.get("MINER_SUBTENSOR_NETWORK", "ws://127.0.0.1:9944")
 NETUID = int(os.environ.get("MINER_NETUID", "2"))
+AXON_EXTERNAL_IP = os.environ.get("MINER_AXON_EXTERNAL_IP", "127.0.0.2")
+AXON_PORT = int(os.environ.get("MINER_AXON_PORT", "0"))
 FUND_AMOUNT_TAO = 1000.0
 
 
@@ -185,7 +194,7 @@ def find_free_port() -> int:
 
 def setup_and_serve(instance_name: str) -> None:
     """Idempotent setup then serve. Runs in its own process."""
-    port = find_free_port()
+    port = AXON_PORT or find_free_port()
     print(f"[{instance_name}] Starting on port {port}...")
     subtensor = connect_subtensor()
 
@@ -235,10 +244,10 @@ def setup_and_serve(instance_name: str) -> None:
     else:
         print(f"[{instance_name}] Already registered")
 
-    print(f"[{instance_name}] Setting axon info: 127.0.0.1:{port}")
+    print(f"[{instance_name}] Setting axon info: {AXON_EXTERNAL_IP}:{port}")
     subtensor.serve_axon(
         netuid=NETUID,
-        axon=bt.Axon(wallet=wallet, port=port, ip="127.0.0.2", external_ip="127.0.0.2"),
+        axon=bt.Axon(wallet=wallet, port=port, ip=AXON_EXTERNAL_IP, external_ip=AXON_EXTERNAL_IP),
     )
 
     print(f"[{instance_name}] Serving on 0.0.0.0:{port}{TARGET_PATH} (response_delay_s={RESPONSE_DELAY_S})")

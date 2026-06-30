@@ -25,6 +25,11 @@ services:
     env_file: ./.env
     environment:
       VALIDATOR_PYLON_SERVICE_ADDRESS: "http://pylon:8000"
+    # Miners POST their solutions back to the validator's callback endpoint. Publish it so
+    # remote miners can reach it; bound to VALIDATOR_CALLBACK_HOST (the IP the validator
+    # advertises) when set, else all interfaces. Restrict exposure with a host firewall.
+    ports:
+      - "${VALIDATOR_CALLBACK_HOST:-0.0.0.0}:${VALIDATOR_CALLBACK_PORT:-8001}:${VALIDATOR_CALLBACK_PORT:-8001}"
     depends_on:
       - pylon
 

@@ -15,6 +15,8 @@ Localnet bootstrap script.
 Sets up the local subnet infrastructure:
 - Transfers TAO from Alice (pre-funded devnet account) to owner and validator wallets
 - Creates and activates subnet (netuid 2, since netuid 1 is owned by zero-key and is unusable)
+- Sets tempo, optionally enables timelocked commit-reveal, and normalizes the genesis subnets'
+  (0/1) tempo to the standard value
 - Registers and stakes validator neuron
 
 register_subnet has no netuid parameter — the chain auto-assigns the next free slot. We
@@ -22,6 +24,17 @@ assume it matches NETUID from localnet/.env and abort if not, so pylon/validator
 don't end up pointed at a different subnet than the one we configured.
 
 Prerequisites: subtensor must be running (cd localnet && docker compose up).
+
+Config (environment variables):
+- NETUID: subnet the bootstrap configures (must match the auto-assigned slot)
+- SUBNET_TEMPO: epoch length in blocks, applied to the subnet and the genesis subnets (0/1)
+- SUBNET_COMMIT_REVEAL_ENABLED: "true" to enable the chain's timelocked commit-reveal (default
+  off; only appropriate on standard 12s-block chains, and requires the chain node to have outbound
+  internet for its Drand offchain worker)
+- SUBNET_REVEAL_PERIOD_EPOCHS: commit-reveal reveal delay in epochs (default 1)
+- BOOTSTRAP_SUBTENSOR_NETWORK: subtensor ws endpoint (default ws://127.0.0.1:9944);
+  point it at a remote chain to bootstrap a multi-host deployment
+- BOOTSTRAP_WALLET_DIR: directory the owner/validator wallets are written to (default ./wallets)
 
 Usage: uv run localnet/bootstrap.py
 """
@@ -41,16 +54,26 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-WALLETS_DIR = Path(__file__).parent / "wallets"
-SUBTENSOR_NETWORK = "ws://127.0.0.1:9944"
+WALLETS_DIR = Path(os.environ.get("BOOTSTRAP_WALLET_DIR", str(Path(__file__).parent / "wallets")))
+SUBTENSOR_NETWORK = os.environ.get("BOOTSTRAP_SUBTENSOR_NETWORK", "ws://127.0.0.1:9944")
 VALIDATOR_STAKE_TAO = 1000.0
 FUND_AMOUNT_TAO = 10_000.0
 
 EXPECTED_NETUID = int(os.environ["NETUID"])
 SUBNET_TEMPO = int(os.environ["SUBNET_TEMPO"])
 
-# Disabled until we have support for fast blocks in pylon
-SUBNET_COMMIT_REVEAL_ENABLED = False
+# Genesis-seeded subnets (root + 1) ship with a non-standard tempo (100, below MIN_TEMPO 360).
+# Normalize them to SUBNET_TEMPO so every subnet on the chain runs at the standard cadence.
+GENESIS_SUBNET_NETUIDS = (0, 1)
+
+# Timelocked commit-reveal. Env-driven, default off: the local dev localnet runs fast blocks (~250ms)
+# where pylon's commit-reveal timing (which assumes ~12s blocks) misbehaves, so it stays disabled there.
+# Deployments on a standard 12s-block chain (e.g. Linode) set SUBNET_COMMIT_REVEAL_ENABLED=true to get
+# the chain's v4 timelocked flow (commit -> drand timelock -> auto-reveal). Requires the chain node to
+# have outbound internet so its Drand offchain worker can pull quicknet pulses; without it commits never
+# reveal. SUBNET_REVEAL_PERIOD_EPOCHS is the reveal delay in EPOCHS (1 = reveal next epoch, like finney).
+SUBNET_COMMIT_REVEAL_ENABLED = os.environ.get("SUBNET_COMMIT_REVEAL_ENABLED", "false").lower() == "true"
+SUBNET_REVEAL_PERIOD_EPOCHS = int(os.environ.get("SUBNET_REVEAL_PERIOD_EPOCHS", "1"))
 
 # AdminFreezeWindow gates subnet-owner admin extrinsics during the last N blocks of each
 # tempo. Disabled on localnet so bootstrap/operator hyperparameter calls are never rejected
@@ -276,6 +299,34 @@ def set_commit_reveal_enabled(subtensor: bt.Subtensor, owner: Wallet, netuid: in
     print(f"  commit-reveal {'enabled' if enabled else 'disabled'}")
 
 
+def set_reveal_period_epochs(subtensor: bt.Subtensor, sudo: Wallet, netuid: int, epochs: int) -> None:
+    """Set the timelocked commit-reveal reveal delay (RevealPeriodEpochs) via Sudo. Idempotent."""
+    current = int(subtensor.get_hyperparameter("RevealPeriodEpochs", netuid=netuid))
+    if current == epochs:
+        print(f"  reveal period already {epochs} epoch(s)")
+        return
+    print(f"  Setting reveal period {current} -> {epochs} epoch(s) via sudo...")
+    inner = subtensor.compose_call(
+        call_module="AdminUtils",
+        call_function="sudo_set_commit_reveal_weights_interval",
+        call_params={"netuid": netuid, "interval": epochs},
+    )
+    response = subtensor.sign_and_send_extrinsic(
+        call=Sudo(subtensor).sudo(inner),
+        wallet=sudo,
+        wait_for_inclusion=True,
+        wait_for_finalization=True,
+    )
+    if not response.success:
+        print(f"  set_reveal_period failed: {response.message}")
+        sys.exit(1)
+    new_val = int(subtensor.get_hyperparameter("RevealPeriodEpochs", netuid=netuid))
+    if new_val != epochs:
+        print(f"  set_reveal_period failed: on-chain value is {new_val}, expected {epochs}")
+        sys.exit(1)
+    print(f"  reveal period set to {epochs} epoch(s)")
+
+
 def register_neuron(subtensor: bt.Subtensor, wallet: Wallet, netuid: int) -> None:
     """Register a neuron if not already registered."""
     if subtensor.is_hotkey_registered(wallet.hotkey.ss58_address, netuid):
@@ -345,6 +396,13 @@ def main() -> None:
     print("\n--- Configuring subnet hyperparameters ---")
     set_subnet_tempo(subtensor, alice, netuid, SUBNET_TEMPO)
     set_commit_reveal_enabled(subtensor, owner, netuid, SUBNET_COMMIT_REVEAL_ENABLED)
+    if SUBNET_COMMIT_REVEAL_ENABLED:
+        set_reveal_period_epochs(subtensor, alice, netuid, SUBNET_REVEAL_PERIOD_EPOCHS)
+
+    print("\n--- Normalizing genesis subnet tempos ---")
+    for genesis_netuid in GENESIS_SUBNET_NETUIDS:
+        if subtensor.subnet_exists(netuid=genesis_netuid):
+            set_subnet_tempo(subtensor, alice, genesis_netuid, SUBNET_TEMPO)
 
     print("\n--- Activating subnet ---")
     activate_subnet(subtensor, owner, netuid)
