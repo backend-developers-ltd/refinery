@@ -66,10 +66,14 @@ extra interface (usually `eth1`) comes up. Confirm with `ip -4 addr show eth1`.
 
 Every service in this deployment is **bound to the VLAN IP** (the chain RPC, the validator callback,
 the miner axon), so nothing listens on the public interface. Add a **Linode Cloud Firewall** to all
-three machines that, on the public interface, allows only inbound SSH from your admin IP and drops
-everything else. (Cloud Firewall governs the public interface; the VLAN provides the private-side
-isolation.) Optionally tighten further with a host firewall on the VLAN interface — see
+three machines that, on the public interface, allows only **inbound** SSH from your admin IP and drops
+everything else inbound. (Cloud Firewall governs the public interface; the VLAN provides the
+private-side isolation.) Optionally tighten further with a host firewall on the VLAN interface — see
 [§8 Security](#8-security-notes).
+
+**Leave outbound (egress) open.** All three machines pull Docker images and the auto-update compose
+over the internet, and crucially the **chain machine's Drand offchain worker must reach `api.drand.sh`**
+(quicknet) for timelocked commit-reveal to reveal weights. Restrict *inbound* only; do not block egress.
 
 ### 1.4 Install Docker + cron on each machine
 
@@ -104,7 +108,8 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
   | bash -s -- localchain prod ~/refinery-chain
 ```
 
-The chain is now serving on `ws://10.0.0.10:9944` (VLAN only). Next, **bootstrap the subnet once**:
+The chain is now serving on `ws://10.0.0.10:9944` (VLAN only), running standard **12s blocks** with
+**persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
 create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv`:
 
 ```bash
@@ -114,19 +119,30 @@ curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.profile
 # Fetch and run the bootstrap script against the local chain (via its VLAN IP)
 curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/localnet/bootstrap.py -o bootstrap.py
 NETUID=2 SUBNET_TEMPO=360 \
+  SUBNET_COMMIT_REVEAL_ENABLED=true SUBNET_REVEAL_PERIOD_EPOCHS=1 \
   BOOTSTRAP_SUBTENSOR_NETWORK=ws://10.0.0.10:9944 \
   BOOTSTRAP_WALLET_DIR="$HOME/refinery-chain/wallets" \
   uv run bootstrap.py
 ```
 
 This creates the subnet at **netuid 2**, the `owner` and `validator` wallets under
-`~/refinery-chain/wallets/`, funds them from the devnet `//Alice` key, and registers + stakes the
-validator. It is idempotent — safe to re-run.
+`~/refinery-chain/wallets/`, funds them from the devnet `//Alice` key, registers + stakes the
+validator, normalizes the genesis subnets' (0/1) tempo to the standard 360, and enables **timelocked
+commit-reveal** on the subnet. It is idempotent — safe to re-run.
 
-> **Chain persistence.** `subtensor-localnet` is an ephemeral devnet: restarting the `subtensor`
-> service (or rebooting this machine) boots a fresh genesis and **wipes all chain state**. You then
-> have to re-run this bootstrap step and let the validator + miners re-register. There is no data
-> volume by default. Keep this machine up; treat a chain restart as a full subnet reset.
+- `SUBNET_COMMIT_REVEAL_ENABLED=true` turns on the chain's v4 timelocked commit-reveal (pylon then
+  commits weights timelock-encrypted and they auto-reveal one epoch later). This is appropriate here
+  because the chain runs standard **12s blocks**; the dev localnet leaves it off (fast blocks).
+- Timelocked reveal depends on the chain node's **Drand offchain worker** reaching `api.drand.sh`
+  (quicknet). Ensure this machine has **outbound internet** (§1.3) — without it, commits never reveal,
+  so no weights are set and miners earn nothing.
+
+> **Chain persistence.** The chain DB is **persistent**: `deploy/linode/localchain/docker-compose.yml`
+> runs the non-fast-runtime binary with `--no-purge` and mounts a volume per authority node. Restarting
+> the `subtensor` service, bumping its image, or rebooting this machine all **resume the existing
+> chain** — they no longer wipe genesis. Run this bootstrap step **once**; the validator + miners stay
+> registered across restarts. (Only `docker compose down -v`, which deletes the volumes, resets the
+> subnet — see §9.)
 
 ---
 
@@ -178,14 +194,15 @@ Then apply the **three localnet-specific settings** to `~/refinery-validator/.en
 cd ~/refinery-validator
 sed -i 's/^NETUID=.*/NETUID=2/' .env                                  # subnet is netuid 2, not 1
 cat >> .env <<'EOF'
-PYLON_BLOCK_DURATION_SECONDS=0.25
+PYLON_BLOCK_DURATION_SECONDS=12
 VALIDATOR_CALLBACK_HOST=10.0.0.20
 EOF
 docker compose up -d            # apply the corrected config
 ```
 
 - `NETUID=2` — the installer defaults to `1`; our bootstrapped subnet is `2`.
-- `PYLON_BLOCK_DURATION_SECONDS=0.25` — match subtensor-localnet's ~250 ms fast blocks.
+- `PYLON_BLOCK_DURATION_SECONDS=12` — match the chain's standard 12s blocks (the chain runs the
+  non-fast-runtime binary, not 250 ms fast blocks).
 - `VALIDATOR_CALLBACK_HOST` — this machine's VLAN IP. The validator advertises
   `http://10.0.0.20:8001` as the callback URL miners POST solutions to, and the compose binds the
   published `8001` to this IP. Open `8001` from the miner in your firewall.
@@ -221,10 +238,14 @@ distinct `MINER_NAME` and `MINER_VLAN_IP`).
 ## 6. Verify end to end
 
 - **Validator log** (`refinery-validator`): `docker compose logs -f validator` — expect `pow.solution`
-  lines per challenge and `Weights computed for epoch ...` once per epoch (~90 s at tempo 360 ×
-  0.25 s/block).
+  lines per challenge and `Weights computed for epoch ...` once per epoch (**~72 min** at tempo 360 ×
+  12 s/block).
 - **Miner log** (`refinery-miner`): `docker compose logs -f miner` — expect `Received request` /
   `Responded to` lines.
+- **Commit-reveal timing.** With timelocked commit-reveal on, pylon *commits* weights each epoch and
+  they **auto-reveal one epoch later** (`SUBNET_REVEAL_PERIOD_EPOCHS=1`). So on-chain `Weights[2]` first
+  appear ~2 epochs (**~2.5 h**) after the validator starts, not immediately. Until the first reveal,
+  `WeightCommits`/`CRV3WeightCommitsV2` populate but `Weights[2]` stays empty — that's expected.
 - **On-chain weights** — from any machine on the VLAN (needs `uv`):
 
   ```bash
@@ -252,6 +273,12 @@ restarts the stack **only if the file changed** (i.e. when a new image digest is
 - chain: cron tag `REFINERY_LOCALCHAIN_UPDATE`, compose `deploy/linode/localchain/docker-compose.yml`
 - miner: cron tag `REFINERY_MINER_UPDATE`, compose `deploy/linode/miner/docker-compose.yml`
 - validator: cron tag from the top-level installer, compose `envs/deployed/docker-compose.yml`
+
+Each machine updates independently — a validator or miner update never touches the chain machine. The
+chain restarts only when its **own** compose changes, and because its state is persistent that restart
+no longer wipes the subnet. One caveat: bumping the chain to an image with a **different genesis** would
+make the persisted DB incompatible (the node would fail to start on the old volumes); a deliberate genesis
+change therefore requires a one-time `docker compose down -v` + re-bootstrap, not just an image bump.
 
 Force an update now: re-run the relevant `install.sh`/`update_compose.sh`, or
 `cd <workdir> && docker compose pull && docker compose up -d`.
@@ -313,5 +340,7 @@ image.
 ## 9. Teardown
 
 Per machine: `cd <workdir> && docker compose down` and remove the cron line
-(`crontab -l | grep -v REFINERY_ | crontab -`). The miner's wallet volume survives a `down`; remove it
-with `docker compose down -v`. Tearing down the chain machine discards all subnet state.
+(`crontab -l | grep -v REFINERY_ | crontab -`). Named volumes survive a plain `down`: the chain keeps
+its DB (subnet, registrations, stake) and the miner keeps its wallet, so `down` + `up -d` resumes where
+you left off. To **fully reset** — wipe all chain state or the miner wallet — use `docker compose down
+-v`, which deletes the volumes. Tearing down the chain machine's volumes discards all subnet state.

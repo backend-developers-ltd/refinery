@@ -1,19 +1,38 @@
 services:
   subtensor:
-    # ghcr.io/opentensor/subtensor-localnet:devnet-ready - bump by re-resolving the tag's digest
+    # ghcr.io/opentensor/subtensor-localnet - bump by re-resolving the tag's digest
     # (docker buildx imagetools inspect ... --format '{{json .Manifest.Digest}}').
     image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    # "False" selects the non-fast-runtime binary baked into the image -> standard 12s blocks (like
+    # finney), not the 250ms fast-blocks default. "--no-purge" keeps the chain DB across restarts
+    # instead of wiping it to a fresh genesis. Both binaries are prebuilt in the image (BUILD_BINARY=0),
+    # so no toolchain is needed.
+    command: ["False", "--no-purge"]
     restart: unless-stopped
     # Bind the RPC/WS ports to the private VLAN IP only - never the public interface.
     ports:
       - "${CHAIN_BIND_IP:?}:9944:9944"
       - "${CHAIN_BIND_IP:?}:9933:9933"
+    # Persist all three authorities' base-paths. The chain runs 3 colocated Aura/Grandpa validators
+    # (//One //Two //Three) and finality needs 2/3, so every node's DB must survive a restart -
+    # including a `docker compose up -d` that RECREATES the container (image bump), which wipes
+    # container-local /tmp. With these volumes + --no-purge the subnet state, registrations and stake
+    # all persist across restarts and host reboots.
+    volumes:
+      - chain_one:/tmp/one
+      - chain_two:/tmp/two
+      - chain_three:/tmp/three
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9944'"]
       interval: 5s
       timeout: 3s
       retries: 10
-# NOTE: subtensor-localnet is an EPHEMERAL devnet chain - it boots a fresh genesis on every start
-# and persists nothing. A restart of this service (or the host) WIPES all chain state, so the subnet
-# must be re-bootstrapped and the validator + miners must re-register. There is intentionally no
-# data volume here. See deploy/linode/README.md ("Chain persistence") before relying on this in place.
+# NOTE: chain state is PERSISTENT (volumes below + --no-purge). A restart of this service, an image
+# bump, or a host reboot resume the existing chain - they no longer wipe genesis. The bootstrap step
+# (deploy/linode/README.md) therefore runs once; the validator + miners stay registered across restarts.
+# Timelocked commit-reveal requires this machine to have OUTBOUND internet (the Drand offchain worker
+# pulls quicknet pulses from api.drand.sh); without egress, commits never reveal. See the README.
+volumes:
+  chain_one:
+  chain_two:
+  chain_three:
