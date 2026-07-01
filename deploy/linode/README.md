@@ -90,6 +90,14 @@ As `root`, on each machine:
 adduser --disabled-password --gecos "" ubuntu
 usermod -aG sudo ubuntu
 
+# Grant passwordless sudo. `--disabled-password` locks the account's password, so `sudo` (which
+# by default prompts for the user's own password) could never authenticate. Passwordless sudo
+# matches the standard cloud `ubuntu` user and suits SSH-key-only login + the non-interactive
+# install scripts and cron jobs below.
+echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-ubuntu
+chmod 440 /etc/sudoers.d/90-ubuntu
+visudo -cf /etc/sudoers.d/90-ubuntu   # verify syntax before relying on it
+
 # Copy your SSH key over so you can log in as `ubuntu`
 rsync --archive --chown=ubuntu:ubuntu ~/.ssh /home/ubuntu/
 ```
@@ -108,11 +116,14 @@ From here on, run **every** step in this guide as `ubuntu` (the `~/…` paths th
 
 ### 1.5 Install Docker + cron on each machine
 
-On **each** of the three machines:
+On **each** of the three machines, install **Docker Engine + the compose plugin** from Docker's apt
+repository, following the official guide:
+<https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository>. (Use the apt-repository
+method, not the convenience script — the latter is explicitly not recommended for production.)
+
+Then add your user to the `docker` group and install cron (used by the auto-update job):
 
 ```bash
-# Docker Engine + compose plugin (official convenience script)
-curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker "$USER"   # log out/in afterwards so the group takes effect
 
 # cron (used by the auto-update job)
