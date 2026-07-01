@@ -75,7 +75,38 @@ private-side isolation.) Optionally tighten further with a host firewall on the 
 over the internet, and crucially the **chain machine's Drand offchain worker must reach `api.drand.sh`**
 (quicknet) for timelocked commit-reveal to reveal weights. Restrict *inbound* only; do not block egress.
 
-### 1.4 Install Docker + cron on each machine
+### 1.4 Create the deployment user
+
+Linode logs you in as **`root`** by default — don't run the deployment as root. On **each** of the
+three machines, create a dedicated sudo user (called `ubuntu` throughout this guide) and do
+everything below as that user. The install scripts use `$HOME`/`$USER` and a per-user `crontab`, so
+they work unchanged under any non-root user; only the one-time Docker/cron install (§1.5) needs
+`sudo`.
+
+As `root`, on each machine:
+
+```bash
+# Create the user and grant sudo
+adduser --disabled-password --gecos "" ubuntu
+usermod -aG sudo ubuntu
+
+# Copy your SSH key over so you can log in as `ubuntu`
+rsync --archive --chown=ubuntu:ubuntu ~/.ssh /home/ubuntu/
+```
+
+Now **open a fresh SSH session as `ubuntu`** and confirm both login and `sudo` work. Only once that
+succeeds, harden SSH by disabling root login:
+
+```bash
+# as ubuntu, on each machine
+sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+```
+
+From here on, run **every** step in this guide as `ubuntu` (the `~/…` paths then resolve under
+`/home/ubuntu/`).
+
+### 1.5 Install Docker + cron on each machine
 
 On **each** of the three machines:
 
@@ -329,6 +360,10 @@ image.
   machine (§3). Keep the validator coldkey on the chain machine / offline.
 - **Nothing on the public interface.** Every service binds to a VLAN IP. The public Cloud Firewall
   should allow only SSH from your admin IP.
+- **Non-root deployment user.** The stack runs as an unprivileged `ubuntu` user (§1.4), not root,
+  and root SSH login is disabled. Combined with the SSH-only Cloud Firewall this removes the direct
+  root entry point. (Note: membership in the `docker` group is effectively root-equivalent, so the
+  real gains are a disabled root login and tidy per-user state, not container isolation.)
 - **Defense in depth on the VLAN (optional).** Add a host firewall (e.g. `ufw`) restricting the VLAN
   interface to exactly: `9944` inbound on the chain from the validator + miner IPs; `8001` inbound on
   the validator from the miner IP; `MINER_AXON_PORT` inbound on the miner from the validator IP.
