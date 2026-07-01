@@ -34,7 +34,6 @@ from nexus.v1 import (
     SuccessfulTaskResult,
     WeightSetterNode,
     WeightSettingSuccess,
-    miners_only,
 )
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -50,6 +49,7 @@ from validator.observability import (
 )
 from validator.payload import PowChallengePayloadCreator
 from validator.proof_of_work import PowChallenge, PowSolution
+from validator.routing import servable_http_miners
 from validator.weighing import PowWeighing
 
 TASK_NAME = NexusTaskName("pow_challenge")
@@ -82,7 +82,9 @@ class Validator(NexusValidator):
         super().__init__(settings)
 
         payload_creator = PowChallengePayloadCreator("pow-challenge-creator", difficulty=settings.difficulty)
-        router = RoundRobinNeuronRouter[PowChallenge]("miner-router", netuid=settings.netuid, neuron_filter=miners_only)
+        router = RoundRobinNeuronRouter[PowChallenge](
+            "miner-router", netuid=settings.netuid, neuron_filter=servable_http_miners
+        )
         communicator = AsyncHttpNeuronCommunicator[PowChallenge, PowSolution](
             "miner-communicator",
             target_path="/task",
