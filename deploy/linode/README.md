@@ -150,6 +150,12 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
   | bash -s -- localchain prod ~/refinery-chain
 ```
 
+> **If the subtensor container crash-loops** with `Cannot allocate memory (os error 12)`, the kernel is
+> refusing the (never-touched) virtual memory the 3-node chain's WASM runtimes reserve. Raise the limits
+> and restart: `sudo sysctl -w vm.overcommit_memory=1 vm.max_map_count=262144`, persist them with
+> `printf 'vm.overcommit_memory=1\nvm.max_map_count=262144\n' | sudo tee /etc/sysctl.d/99-subtensor.conf`,
+> then `docker compose up -d`.
+
 The chain is now serving on `ws://10.0.0.10:9944` (VLAN only), running standard **12s blocks** with
 **persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
 create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv`:
