@@ -4,9 +4,9 @@ This directory deploys the full Refinery subnet across **three Linode machines**
 
 | Role | Machine | Runs | Source of compose |
 |------|---------|------|-------------------|
-| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) | `deploy/linode/localchain/docker-compose.yml` |
-| **validator** | `refinery-validator` | validator + pylon + full metrics stack | `envs/deployed/docker-compose.yml` (the standard prod stack) |
-| **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner | `deploy/linode/miner/docker-compose.yml` |
+| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) + public metrics exporters | `deploy/linode/localchain/docker-compose.yml` |
+| **validator** | `refinery-validator` | validator + pylon + its own full metrics stack | `envs/deployed/docker-compose.yml` (the standard prod stack) |
+| **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner + public metrics exporters | `deploy/linode/miner/docker-compose.yml` |
 
 Linode is just a (more elaborate) **prod instance**: it runs the *same* published images
 (`refinery-validator-prod`, `refinery-miner-prod`) as any other prod deploy — it merely also hosts its
@@ -32,6 +32,14 @@ docker-compose from the `deploy-config-prod` branch (see [Updates](#7-updates)).
 ```
 
 The VLAN IPs above (`10.0.0.10/20/30`) are an example used throughout this guide — substitute your own.
+
+**Metrics.** The chain and miner machines expose `cadvisor` (per-container, `:8080`) and `node-exporter`
+(host, `:9100`) **publicly** (on all interfaces), to be scraped by a **separate, external Prometheus**
+that you run elsewhere — *not* the validator's. The validator keeps its **own** Prometheus (the standard
+prod stack); it scrapes only itself + pylon and knows nothing about the chain or miner. Chain and miner
+run no Prometheus/proxy of their own — only the two exporters, no secrets required. Because these
+endpoints are public and unauthenticated, restrict `:8080` + `:9100` to the external Prometheus's IP in
+the Cloud Firewall (§8).
 
 ---
 
@@ -64,10 +72,13 @@ extra interface (usually `eth1`) comes up. Confirm with `ip -4 addr show eth1`.
 
 ### 1.3 Lock down the public interface
 
-Every service in this deployment is **bound to the VLAN IP** (the chain RPC, the validator callback,
-the miner axon), so nothing listens on the public interface. Add a **Linode Cloud Firewall** to all
-three machines that, on the public interface, allows only **inbound** SSH from your admin IP and drops
-everything else inbound. (Cloud Firewall governs the public interface; the VLAN provides the
+Every core service in this deployment is **bound to the VLAN IP** (the chain RPC, the validator
+callback, the miner axon), so nothing of the subnet listens on the public interface. The **one
+exception** is the chain's and miner's metrics exporters (`cadvisor` `:8080`, `node-exporter` `:9100`):
+they are exposed **publicly** so an external Prometheus can scrape them. Add a **Linode Cloud Firewall**
+to all three machines that, on the public interface, allows only **inbound** SSH from your admin IP
+plus — on the chain and miner only — inbound `8080` + `9100` **from the external Prometheus's IP**, and
+drops everything else inbound. (Cloud Firewall governs the public interface; the VLAN provides the
 private-side isolation.) Optionally tighten further with a host firewall on the VLAN interface — see
 [§8 Security](#8-security-notes).
 
@@ -157,7 +168,9 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > then `docker compose up -d`.
 
 The chain is now serving on `ws://10.0.0.10:9944` (VLAN only), running standard **12s blocks** with
-**persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
+**persistent state** (survives restarts/reboots). The same compose also starts `cadvisor` and
+`node-exporter` **publicly** on `:8080` / `:9100` for your external Prometheus; open both **from that
+Prometheus's IP** in the Cloud Firewall (§8). Next, **bootstrap the subnet once**:
 create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv`:
 
 ```bash
@@ -255,6 +268,10 @@ docker compose up -d            # apply the corrected config
   `http://10.0.0.20:8001` as the callback URL miners POST solutions to, and the compose binds the
   published `8001` to this IP. Open `8001` from the miner in your firewall.
 
+The validator runs its **own** Prometheus (part of the standard prod stack) that scrapes only itself
+and pylon; it does **not** scrape the chain or miner. Those two are collected by a separate external
+Prometheus you run yourself (§5, §8) — the validator stack is used here completely unchanged.
+
 Check health: `docker compose ps` and `docker compose logs -f validator pylon`.
 
 ---
@@ -275,7 +292,8 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 
 The miner creates its own wallet (in a `miner-wallets` volume), self-funds from `//Alice`, registers
 on netuid 2, and advertises its axon at `10.0.0.30:18000`. Open `18000` from the validator in your
-firewall.
+firewall. The same compose also starts `cadvisor` and `node-exporter` **publicly** on `:8080` / `:9100`
+for your external Prometheus; open both **from that Prometheus's IP** in the Cloud Firewall (§8).
 
 Run a slow miner instead by setting `MINER_RESPONSE_DELAY_S` (e.g. `3`) in `.env` — watch its weight
 drop relative to a fast one. To run several distinct miners, deploy more miner machines (each with a
@@ -375,8 +393,11 @@ image.
 
 - **No coldkey on the validator.** Only `coldkeypub.txt` + the hotkey are copied to the validator
   machine (§3). Keep the validator coldkey on the chain machine / offline.
-- **Nothing on the public interface.** Every service binds to a VLAN IP. The public Cloud Firewall
-  should allow only SSH from your admin IP.
+- **Public interface: SSH + metrics only.** Every subnet service binds to a VLAN IP; the sole public
+  listeners are the chain's and miner's metrics exporters (`8080` + `9100`), exposed for the external
+  Prometheus. The public Cloud Firewall should allow **only** inbound SSH from your admin IP, plus — on
+  the chain and miner — inbound `8080` + `9100` **from the external Prometheus's IP** (nothing wider:
+  `cadvisor`/`node-exporter` are unauthenticated and leak host/container detail).
 - **Non-root deployment user.** The stack runs as an unprivileged `ubuntu` user (§1.4), not root,
   and root SSH login is disabled. Combined with the SSH-only Cloud Firewall this removes the direct
   root entry point. (Note: membership in the `docker` group is effectively root-equivalent, so the
@@ -384,6 +405,10 @@ image.
 - **Defense in depth on the VLAN (optional).** Add a host firewall (e.g. `ufw`) restricting the VLAN
   interface to exactly: `9944` inbound on the chain from the validator + miner IPs; `8001` inbound on
   the validator from the miner IP; `MINER_AXON_PORT` inbound on the miner from the validator IP.
+- **Public metrics exporters.** The chain's and miner's `cadvisor` (`8080`) + `node-exporter` (`9100`)
+  listen on all interfaces so an external Prometheus can scrape them, and they are **unauthenticated**.
+  Lock them down at the public Cloud Firewall to the external Prometheus's IP only (above); never leave
+  `8080`/`9100` open to the internet.
 - **Devnet keys.** This subnet funds everything from the well-known `//Alice` devnet key on its own
   local chain. It has no economic value and must never be pointed at testnet or mainnet.
 
