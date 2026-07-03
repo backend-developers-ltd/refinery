@@ -37,11 +37,12 @@ def _filter(neurons: Sequence[_Neuron]) -> Sequence[Neuron]:
     return servable_http_miners(cast(Sequence[Neuron], neurons))
 
 
-def test_keeps_only_servable_http_miners() -> None:
+def test_keeps_servable_http_miners_including_permit_holders() -> None:
+    permitted_miner = _neuron("permitted-miner", validator_permit=True)
     honest_a = _neuron("honest-a")
     honest_b = _neuron("honest-b", ip="10.0.0.31", port=18001)
     neurons = [
-        _neuron("validator-permitted", validator_permit=True),
+        permitted_miner,
         _neuron("validator-self", ip="0.0.0.0", port=0, protocol=AxonProtocol.TCP),
         _neuron("owner-unserved", ip="0.0.0.0", port=0, protocol=AxonProtocol.TCP),
         honest_a,
@@ -50,7 +51,7 @@ def test_keeps_only_servable_http_miners() -> None:
         honest_b,
     ]
 
-    assert _filter(neurons) == [honest_a, honest_b]
+    assert _filter(neurons) == [permitted_miner, honest_a, honest_b]
 
 
 def test_empty_input_returns_empty() -> None:

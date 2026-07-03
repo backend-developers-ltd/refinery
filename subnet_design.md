@@ -93,11 +93,13 @@ The validator runs a continuous loop with **two decoupled frequencies**:
     miner pseudo-randomly per challenge. Over a weight-setting window every miner is therefore challenged
     **many times, with roughly equal counts** (coverage equalizes statistically), rather than in a single
     synchronized broadcast. This keeps the validator maximally simple while still exercising every miner.
-  - **Only servable miners are routable:** the router's neuron filter keeps a neuron only if it lacks a
-    validator permit **and** actually serves a reachable HTTP axon (`is_serving`, `protocol == HTTP`,
-    valid port). Registered-but-unserved neurons — the validator's own hotkey before it earns a permit,
-    the subnet owner, offline miners — carry a zeroed axon (`ip=0.0.0.0`, `port=0`, `protocol=TCP`);
-    challenging one would only make the HTTP communicator reject the target and waste the block's attempt.
+  - **Only servable miners are routable:** the router's neuron filter keeps a neuron only if it
+    actually serves a reachable HTTP axon (`is_serving`, `protocol == HTTP`, valid port). A validator
+    permit is **not** a disqualifier — a productive miner can accumulate enough stake to earn one while
+    still serving as a miner, and must keep being challenged. Registered-but-unserved neurons — the
+    validator's own hotkey, the subnet owner, offline miners — carry a zeroed axon (`ip=0.0.0.0`,
+    `port=0`, `protocol=TCP`); challenging one would only make the HTTP communicator reject the target
+    and waste the block's attempt.
   - Each challenge gets its **own fresh random `seed`**, so nothing can be shared, replayed, or
     precomputed across miners or rounds.
   - **Sampling stats accumulate over the window:** `success_rate` and average latency for each miner are
