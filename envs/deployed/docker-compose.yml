@@ -1,7 +1,7 @@
 services:
   pylon:
-    # backenddevelopersltd/bittensor-pylon:2.0.0 - bump via knowledge/validator.deploy.md (Procedure 3).
-    image: backenddevelopersltd/bittensor-pylon@sha256:5e614a173c0cba3b33fbd15436105b362050bff876018e6bfd2dc6afee187acf
+    # backenddevelopersltd/bittensor-pylon:2.1.0 - bump via knowledge/validator.deploy.md (Procedure 3).
+    image: backenddevelopersltd/bittensor-pylon@sha256:19372a57b1316b340971094aa067a6e39a957d6903dec2cd8b7f1d0335d9e0ad
     restart: unless-stopped
     env_file: ./.env
     environment:
@@ -20,7 +20,7 @@ services:
 
   validator:
     # Replaced with a real digest on first promotion - see knowledge/validator.deploy.md (Procedure 2).
-    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:3fd9e19647b438a813461f1fcd6e31d18d60b1e43e698dc23f8d7e54652f8cde
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:46a2a625b80b3311810234bfcfcfa08f85efeeb2553143237c826d14a0b0398c
     restart: unless-stopped
     env_file: ./.env
     environment:
