@@ -20,7 +20,7 @@ services:
 
   validator:
     # Replaced with a real digest on first promotion - see knowledge/validator.deploy.md (Procedure 2).
-    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:46a2a625b80b3311810234bfcfcfa08f85efeeb2553143237c826d14a0b0398c
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:9c4ce538762eb29ed78da62758a96e5c6eab987738e7c1a402bf7bc1b17ae763
     restart: unless-stopped
     env_file: ./.env
     environment:
