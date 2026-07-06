@@ -27,6 +27,38 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Per-container metrics for this machine, published on all interfaces so an EXTERNAL Prometheus
+  # (separate from the validator's own) can scrape it over the public interface. cAdvisor is
+  # unauthenticated - restrict :8080 to the external Prometheus's IP in the Cloud Firewall (§8).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.40.0
+    restart: unless-stopped
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /cgroup:/cgroup:ro
+    ports:
+      - "8080:8080"
+
+  # Host-level metrics for this machine, exposed on all interfaces (:9100) for the external Prometheus.
+  # Host networking is needed for accurate host/network stats. node-exporter is unauthenticated -
+  # restrict :9100 to the external Prometheus's IP in the Cloud Firewall (§8).
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run|boot|var/.+)($$|/)'
+      - '--collector.tcpstat'
 # NOTE: chain state is PERSISTENT (volumes below + --no-purge). A restart of this service, an image
 # bump, or a host reboot resume the existing chain - they no longer wipe genesis. The bootstrap step
 # (deploy/linode/README.md) therefore runs once; the validator + miners stay registered across restarts.
