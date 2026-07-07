@@ -28,7 +28,7 @@ This directory contains scripts to install and maintain a Refinery validator nod
 ## Quick Installation
 
 ```bash
-curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-production/installer/install.sh | bash
 ```
 
 This will:
@@ -53,27 +53,32 @@ Written to `<WORKING_DIRECTORY>/.env` on first run:
 - `BITTENSOR_NETWORK` — Bittensor network address (e.g. `finney`, `ws://localhost:9944`).
 - `BITTENSOR_WALLET_NAME` / `BITTENSOR_WALLET_HOTKEY_NAME` — wallet identifiers consumed by pylon.
 - `HOST_WALLET_DIR` — host-side path to the Bittensor wallets directory (mounted read-only into pylon).
-- `ENVIRONMENT` — deploy environment suffix used in the validator image name (default: `prod`).
+- `ENVIRONMENT` — OpenTelemetry `deployment.environment.name` resource attribute stamped on traces and
+  logs (default: `production`).
 - `VALIDATOR_PYLON_OPEN_ACCESS_TOKEN` — auto-generated 32-byte hex token shared between validator and pylon. The
   compose reuses it as the validator's pylon *identity* token (`VALIDATOR_PYLON_IDENTITY_TOKEN`, identity name
   `validator`), which is what authorizes the validator to set weights through pylon.
 - `PYLON_METRICS_TOKEN` — auto-generated 32-byte hex Bearer token used by the local Prometheus to scrape Pylon's `/metrics` endpoint.
 - `PROMETHEUS_PROXY_SECRET_KEY` — auto-generated 32-byte hex signing key for the `bittensor-prometheus-proxy` sidecar that remote-writes metrics to `https://prometheus.bactensor.io`.
 - `SENTRY_DSN` — optional Sentry DSN for the `prometheus-proxy` sidecar; leave empty to disable error reporting.
+- `TRACES_UPSTREAM_URL` / `TRACES_UPSTREAM_USER` / `TRACES_UPSTREAM_PASSWORD` — OTLP/HTTP upstream
+  endpoint and basic-auth credentials the `alloy` sidecar forwards distributed traces to: the
+  observability proxy (recommended), or a Tempo backend / any OTLP-compatible upstream directly.
 
 ## Custom Installation
 
 ```bash
-curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-production/installer/install.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
 ```
 
-- `ENV_NAME`: branch suffix for `deploy-config-<ENV_NAME>` (defaults to `prod`).
+- `ENV_NAME`: branch suffix for `deploy-config-<ENV_NAME>`, also written to `.env` as the
+  `ENVIRONMENT` / OTel `deployment.environment.name` attribute (defaults to `production`).
 - `WORKING_DIRECTORY`: where to install (defaults to `~/refinery-validator/`).
 
 Example:
 
 ```bash
-curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/install.sh | bash -s -- prod /opt/refinery-validator
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-production/installer/install.sh | bash -s -- production /opt/refinery-validator
 ```
 
 ## Updates
@@ -83,5 +88,5 @@ The validator updates itself automatically every 15 minutes via the cron job ins
 ## Manual Update
 
 ```bash
-curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/installer/update_compose.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
+curl -s https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-production/installer/update_compose.sh | bash -s -- [ENV_NAME] [WORKING_DIRECTORY]
 ```
