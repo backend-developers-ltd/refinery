@@ -9,13 +9,15 @@ A `docker compose` stack whose core containers are:
 - **pylon** — sidecar that proxies all Bittensor / subtensor communication for the
   validator (handles wallet, weight setting, metagraph reads).
 - **validator** — the Refinery validator process built from this repo.
-- **alloy** — Grafana Alloy sidecar that collects the validator's OpenTelemetry traces and forwards
-  them to the configured OTLP upstream — the observability proxy or a Tempo backend.
+- **alloy** — Grafana Alloy sidecar that collects and tail-samples the validator's OpenTelemetry
+  traces, then forwards them to the local observability proxy.
 
 ## Observability
 
-The validator ships structured JSON logs (`structlog`) and OpenTelemetry traces. The traces
-upstream is configured via `TRACES_UPSTREAM_URL` / `TRACES_UPSTREAM_USER` / `TRACES_UPSTREAM_PASSWORD`.
+The validator ships structured JSON logs (`structlog`) and OpenTelemetry traces. Compose wires
+Alloy to the local observability proxy; operators do not need to configure a trace upstream or
+Basic Auth credentials. The proxy adds the validator hotkey/netuid identity and signs traces before
+forwarding them to central.
 
 ## Running a validator
 

@@ -61,9 +61,10 @@ Written to `<WORKING_DIRECTORY>/.env` on first run:
 - `PYLON_METRICS_TOKEN` — auto-generated 32-byte hex Bearer token used by the local Prometheus to scrape Pylon's `/metrics` endpoint.
 - `PROMETHEUS_PROXY_SECRET_KEY` — auto-generated 32-byte hex signing key for the `bittensor-prometheus-proxy` sidecar that remote-writes metrics to `https://prometheus.bactensor.io`.
 - `SENTRY_DSN` — optional Sentry DSN for the `prometheus-proxy` sidecar; leave empty to disable error reporting.
-- `TRACES_UPSTREAM_URL` / `TRACES_UPSTREAM_USER` / `TRACES_UPSTREAM_PASSWORD` — OTLP/HTTP upstream
-  endpoint and basic-auth credentials the `alloy` sidecar forwards distributed traces to: the
-  observability proxy (recommended), or a Tempo backend / any OTLP-compatible upstream directly.
+
+Distributed tracing requires no additional operator credentials. Alloy forwards traces to the
+local observability proxy configured in Compose; that proxy adds the validator identity and signs
+the request before sending it to central.
 
 ## Custom Installation
 
