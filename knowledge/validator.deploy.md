@@ -40,28 +40,25 @@ third-party image in the stack (pylon, anything else). There is no "but this
 tag is semver, so it's safe" exception — the registry doesn't care about
 semver.
 
-> Observability sidecars currently ship pinned only by tag (`cadvisor:v0.40.0`,
-> `node-exporter:latest`, `bittensor_prometheus:latest`, `grafana/alloy:v1.15.1`)
-> rather than by digest. This is a known gap, not an endorsement: when hardening
-> the deploy, pin these by `@sha256` too via Procedure 3. The `alloy` traces
-> sidecar (see the tracing notes below) follows the same convention as the rest
-> of the metrics stack for now.
+> Some observability sidecars currently ship pinned only by tag (`cadvisor:v0.40.0`,
+> `node-exporter:latest`, and `bittensor_prometheus:latest`) rather than by digest.
+> This is a known gap, not an endorsement: when hardening the deploy, pin these by
+> `@sha256` too via Procedure 3. The Alloy traces sidecar is already pinned by digest.
 
 ## The traces sidecar (Alloy)
 
 `envs/deployed/docker-compose.yml` runs a `grafana/alloy` sidecar that tail-samples the
-validator's OpenTelemetry spans and forwards them to an OTLP/HTTP upstream. Its config lives
-next to the compose file in `envs/deployed/alloy/config.alloy` and is synced to operator hosts
-by the same `update_compose.sh` cron job (it now fetches both files). **`TRACES_UPSTREAM_URL` /
-`TRACES_UPSTREAM_USER` / `TRACES_UPSTREAM_PASSWORD` are required by the sidecar** — Alloy
-refuses to build its exporter without an endpoint and credentials, so with any of them
-empty the sidecar crash-loops on startup. Bumping the Alloy image or editing the Alloy
-config is a Procedure 3 change (non-validator service) and ships on `deploy-config-<env>`.
+validator's OpenTelemetry spans and forwards them to the local observability proxy at
+`/traces/outbound`. The proxy enriches each payload with the operator hotkey and netuid,
+signs it with the hotkey, and sends it to the central proxy, which validates it before
+forwarding it to Tempo.
 
-> TODO: the intended upstream is the observability proxy (today the Prometheus proxy), mirroring
-> metrics — once it supports traces, point the exporter at it and the proxy will add the operator
-> `hotkey` label. For now `TRACES_UPSTREAM_URL` can target a Tempo backend (or any OTLP upstream)
-> directly.
+Alloy does not use Basic Auth. Compose supplies `TRACES_UPSTREAM_URL` as the local
+`http://prometheus-proxy:8000` service address; operators do not configure trace upstream
+credentials in `.env`. The Alloy config lives next to the Compose file in
+`envs/deployed/alloy/config.alloy` and the same `update_compose.sh` cron job synchronizes both
+files to operator hosts. Bumping the Alloy image or editing its configuration is a Procedure 3
+change (non-validator service) and ships on `deploy-config-<env>`.
 
 ## Branches and what they do
 

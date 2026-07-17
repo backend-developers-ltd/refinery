@@ -47,11 +47,6 @@ VALIDATOR_PYLON_OPEN_ACCESS_TOKEN=${VALIDATOR_PYLON_OPEN_ACCESS_TOKEN}
 PYLON_METRICS_TOKEN=${PYLON_METRICS_TOKEN}
 PROMETHEUS_PROXY_SECRET_KEY=${PROMETHEUS_PROXY_SECRET_KEY}
 SENTRY_DSN=${SENTRY_DSN}
-# Distributed traces upstream Alloy forwards to. Left empty because the `alloy` sidecar
-# ships disabled; required once it is enabled (Alloy crash-loops without them).
-TRACES_UPSTREAM_URL=
-TRACES_UPSTREAM_USER=
-TRACES_UPSTREAM_PASSWORD=
 EOL
 
     echo ".env file created successfully."

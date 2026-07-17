@@ -143,10 +143,12 @@ attributes **deliberately carry no operator hotkey** — the observability proxy
 the structlog processors in `logging_config.py` stamp the same attributes onto every log line so logs
 and traces correlate.
 
-In deployment the validator exports to a `grafana/alloy` sidecar that tail-samples and forwards to an
-OTLP/HTTP upstream (`envs/deployed/alloy/config.alloy.jinja`). **`TRACES_UPSTREAM_*` are required by
-the sidecar** — Alloy crash-loops on startup without an endpoint and credentials. `update_compose.sh`
-keeps both `docker-compose.yml` and `alloy/config.alloy` in sync on operator hosts.
+In deployment the validator exports to a `grafana/alloy` sidecar that tail-samples and forwards to the
+local observability proxy at `/traces/outbound` (`envs/deployed/alloy/config.alloy.jinja`). The proxy
+adds the operator hotkey and netuid, signs the payload with the hotkey, and forwards it to central.
+Alloy does not use Basic Auth: Compose sets its local `TRACES_UPSTREAM_URL`, and no operator-provided
+trace credentials are required. `update_compose.sh` keeps both `docker-compose.yml` and
+`alloy/config.alloy` in sync on operator hosts.
 
 #### Structured logging
 

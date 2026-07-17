@@ -1,11 +1,8 @@
 // Grafana Alloy configuration for the validator's distributed traces.
 //
-// The upstream (TRACES_UPSTREAM_URL) is meant to be the observability proxy,
-// mirroring how metrics already flow prometheus -> prometheus-proxy ->
-// prometheus.bactensor.io. The proxy authenticates the operator and adds the
-// `hotkey` label itself — which is why the validator never sends a hotkey. You
-// can also point TRACES_UPSTREAM_URL straight at a Tempo backend (or any other
-// OTLP-compatible upstream) instead.
+// Alloy forwards only to the local observability proxy. The proxy adds the
+// operator hotkey and netuid, signs the modified payload, and forwards it to
+// central. Alloy therefore needs no external endpoint or Basic Auth credentials.
 
 otelcol.receiver.otlp "default" {
 	http {
@@ -133,14 +130,11 @@ otelcol.processor.batch "default" {
 	}
 }
 
-otelcol.auth.basic "traces_upstream" {
-	username = sys.env("TRACES_UPSTREAM_USER")
-	password = sys.env("TRACES_UPSTREAM_PASSWORD")
-}
-
 otelcol.exporter.otlphttp "traces_upstream" {
 	client {
 		endpoint = sys.env("TRACES_UPSTREAM_URL")
-		auth     = otelcol.auth.basic.traces_upstream.handler
 	}
+
+	// The proxy uses its own endpoint rather than OTLP's default /v1/traces.
+	traces_endpoint = string.trim_suffix(sys.env("TRACES_UPSTREAM_URL"), "/") + "/traces/outbound"
 }
