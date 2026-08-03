@@ -4,7 +4,9 @@
 
 set -euo pipefail
 
-ENV_NAME="${1:-prod}"
+# ENV_NAME is both the deploy-config branch suffix (deploy-config-<ENV_NAME>) and the
+# OpenTelemetry deployment.environment.name attribute written to .env below.
+ENV_NAME="${1:-production}"
 WORKING_DIRECTORY=${2:-~/refinery-validator/}
 
 mkdir -p "${WORKING_DIRECTORY}"

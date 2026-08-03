@@ -47,6 +47,7 @@ from validator.observability import (
     log_solution,
     log_weights_set,
 )
+from validator.otel import OtelSettings, setup_otel
 from validator.payload import PowChallengePayloadCreator
 from validator.proof_of_work import PowChallenge, PowSolution
 from validator.routing import servable_http_miners
@@ -173,6 +174,7 @@ def main(env_file: Path | None) -> None:
     load_dotenv(env_file)
     logging_settings = LoggingSettings()
     configure_logging(logging_settings)
+    setup_otel(OtelSettings())
     _setup_sentry()
     Validator.run(settings_class=Settings)
 

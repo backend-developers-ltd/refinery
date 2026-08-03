@@ -20,13 +20,15 @@ services:
 
   validator:
     # Replaced with a real digest on first promotion - see knowledge/validator.deploy.md (Procedure 2).
-    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:359ef1c80e93f7e399c97c2c36e36ed11c6500a10075d534a38494858261ac81
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:06d0ffd1ff0751cd79b0ee819bbeba182e7d3544cdcbf71df01372df50c0604b
     restart: unless-stopped
     env_file: ./.env
     environment:
       VALIDATOR_PYLON_SERVICE_ADDRESS: "http://pylon:8000"
       VALIDATOR_PYLON_IDENTITY_NAME: "validator"
       VALIDATOR_PYLON_IDENTITY_TOKEN: "${VALIDATOR_PYLON_OPEN_ACCESS_TOKEN:?}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
     # Miners POST their solutions back to the validator's callback endpoint. Publish it so
     # remote miners can reach it; bound to VALIDATOR_CALLBACK_HOST (the IP the validator
     # advertises) when set, else all interfaces. Restrict exposure with a host firewall.
@@ -34,6 +36,24 @@ services:
       - "${VALIDATOR_CALLBACK_HOST:-0.0.0.0}:${VALIDATOR_CALLBACK_PORT:-8001}:${VALIDATOR_CALLBACK_PORT:-8001}"
     depends_on:
       - pylon
+      - alloy
+
+  alloy:
+    image: grafana/alloy@sha256:1f40cf52adda8fab3e058f9347a5d165624ecb9fbc1527769cb744748961940d
+    restart: unless-stopped
+    environment:
+      # Alloy talks only to the local proxy. The proxy adds the wallet identity,
+      # netuid, and Bittensor signature before forwarding to central.
+      TRACES_UPSTREAM_URL: "http://prometheus-proxy:8000"
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - alloy-data:/var/lib/alloy
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    depends_on:
+      - prometheus-proxy
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.40.0
@@ -92,19 +112,25 @@ services:
             type: Bearer
             credentials: $${PYLON_METRICS_TOKEN}
       remote_write:
-        - url: "http://prometheus-proxy:8000/prometheus_outbound_proxy/"
+        - url: "http://prometheus-proxy:8000/prometheus/outbound"
       EOF
       exec /entrypoint.sh --log.level=debug --storage.tsdb.retention.size=1GB'
 
+
   prometheus-proxy:
-    image: backenddevelopersltd/bittensor-prometheus-proxy:latest
+    image: ghcr.io/bittensor-church/bittensor-prometheus-proxy@sha256:d4ff25525b663e8a71d637261fda05739916a0a064d6a480ad60466cd488386b
     restart: unless-stopped
     environment:
       CENTRAL_PROMETHEUS_PROXY_URL: "https://prometheus.bactensor.io"
+      CENTRAL_TEMPO_PROXY_URL: "https://prometheus.bactensor.io"
       ENV: "prometheus-proxy-prod"
       SECRET_KEY: "${PROMETHEUS_PROXY_SECRET_KEY:?}"
+      BITTENSOR_NETUID: "${NETUID:?}"
       BITTENSOR_WALLET_NAME: "${BITTENSOR_WALLET_NAME:?}"
       BITTENSOR_WALLET_HOTKEY_NAME: "${BITTENSOR_WALLET_HOTKEY_NAME:?}"
       SENTRY_DSN: "${SENTRY_DSN:-}"
     volumes:
       - "${HOST_WALLET_DIR:?}:/root/.bittensor/wallets"
+
+volumes:
+  alloy-data: {}
