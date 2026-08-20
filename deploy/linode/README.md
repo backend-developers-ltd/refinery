@@ -41,7 +41,8 @@ The VLAN IPs above (`10.0.0.10/20/30`) are an example used throughout this guide
 
 In the Linode Cloud Manager, create three Linodes, all **in the same region** (VLANs are regional):
 
-- `refinery-chain` — the local blockchain. CPU/RAM modest; a shared 2 GB plan is enough for localnet.
+- `refinery-chain` — the local blockchain. CPU is modest, but it runs **three** colocated authority
+  nodes: give it at least 4 GB (2 GB OOMs, even with the cache caps described in §2).
 - `refinery-validator` — validator + pylon + metrics. Give it the most headroom (e.g. 4 GB).
 - `refinery-miner` — the brute-force miner. PoW is CPU-bound; a dedicated-CPU plan mines faster.
 
@@ -155,6 +156,17 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > and restart: `sudo sysctl -w vm.overcommit_memory=1 vm.max_map_count=262144`, persist them with
 > `printf 'vm.overcommit_memory=1\nvm.max_map_count=262144\n' | sudo tee /etc/sysctl.d/99-subtensor.conf`,
 > then `docker compose up -d`.
+
+> **Memory caps.** Substrate defaults to a **1 GiB trie cache plus a ~339 MB RocksDB block cache per
+> node**, so the three authorities grow towards ~4 GB of caches alone and OOM-kill the machine every few
+> hours. `deploy/linode/localchain/docker-compose.yml` therefore wraps the image's entrypoint to patch
+> `--trie-cache-size 67108864 --db-cache 64` into each authority's argv (the image's `localnet.sh`
+> hardcodes them and takes no node flags of its own), and runs the container under a 3 GB `mem_limit`
+> with swap disabled. If an image bump changes `localnet.sh` so the patch stops applying, the container
+> refuses to start and logs `FATAL: expected to cap 3 authorities' caches`. Note that an OOM kill lands
+> on a single `node-subtensor`, never on PID 1, so the container can stay "up" with 2/3 authorities —
+> below GRANDPA's quorum — while the chain quietly stops finalizing; check `docker compose exec
+> subtensor pgrep -c node-subtensor` (expect `3`) and `docker compose restart subtensor` to recover.
 
 The chain is now serving on `ws://10.0.0.10:9944` (VLAN only), running standard **12s blocks** with
 **persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:

@@ -3,12 +3,44 @@ services:
     # ghcr.io/opentensor/subtensor-localnet - bump by re-resolving the tag's digest
     # (docker buildx imagetools inspect ... --format '{{json .Manifest.Digest}}').
     image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    # The image's /scripts/localnet.sh hardcodes each authority's argv and accepts no extra node flags,
+    # so this wrapper patches the caches in before handing over to it.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+
+        # Cap the per-node caches. Substrate defaults to a 1 GiB trie cache (--trie-cache-size) and a
+        # ~339 MB RocksDB block cache PER NODE; three colocated authorities therefore grow towards ~4 GB
+        # of caches alone - more RAM than this machine has - and the host OOMs every few hours. 64 MiB of
+        # each is ample for a localnet. The patch must be idempotent: a container restart reuses the same
+        # writable layer, so an unconditional sed would append a second set of flags and trip the check
+        # below on every restart. Bail out loudly if the upstream script stops matching, so a bad image
+        # bump fails visibly instead of silently reverting to the 1 GiB default.
+        if ! grep -q -- '--trie-cache-size' /scripts/localnet.sh; then
+          sed -i 's/^\( *\)--unsafe-force-node-key-generation$$/\1--unsafe-force-node-key-generation\n\1--trie-cache-size 67108864\n\1--db-cache 64/' /scripts/localnet.sh
+        fi
+        capped=$$(grep -c -- '--trie-cache-size' /scripts/localnet.sh || true)
+        if [ "$$capped" != "3" ]; then
+          echo "FATAL: expected to cap 3 authorities' caches, patched $$capped - localnet.sh changed upstream" >&2
+          exit 1
+        fi
+
+        exec /scripts/localnet.sh "$$@"
+      - refinery-localchain
     # "False" selects the non-fast-runtime binary baked into the image -> standard 12s blocks (like
     # finney), not the 250ms fast-blocks default. "--no-purge" keeps the chain DB across restarts
     # instead of wiping it to a fresh genesis. Both binaries are prebuilt in the image (BUILD_BINARY=0),
-    # so no toolchain is needed.
+    # so no toolchain is needed. These reach localnet.sh through the wrapper's "$@".
     command: ["False", "--no-purge"]
     restart: unless-stopped
+    # Hard ceiling so a runaway node hits the cgroup limit instead of the host's OOM killer picking a
+    # victim of its own choosing (last time it left the box thrashing at load 98 with sshd barely
+    # answering). memswap_limit equal to mem_limit disables swap for the container: thrashing the host's
+    # small swap only dragged block production down before the kill came anyway.
+    mem_limit: 3g
+    memswap_limit: 3g
     # Bind the RPC/WS ports to the private VLAN IP only - never the public interface.
     ports:
       - "${CHAIN_BIND_IP:?}:9944:9944"
