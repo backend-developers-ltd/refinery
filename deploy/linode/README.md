@@ -4,7 +4,7 @@ This directory deploys the full Refinery subnet across **three Linode machines**
 
 | Role | Machine | Runs | Source of compose |
 |------|---------|------|-------------------|
-| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) | `deploy/linode/localchain/docker-compose.yml` |
+| **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) + an archive full node | `deploy/linode/localchain/docker-compose.yml` |
 | **validator** | `refinery-validator` | validator + pylon + full metrics stack | `envs/deployed/docker-compose.yml` (the standard prod stack) |
 | **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner | `deploy/linode/miner/docker-compose.yml` |
 
@@ -22,8 +22,8 @@ docker-compose from the `deploy-config-prod` branch (see [Updates](#7-updates)).
    │ refinery-chain     │◀──────────────────────│ refinery-validator │
    │ 10.0.0.10          │◀───────────┐          │ 10.0.0.20          │
    │ subtensor 9944/9933│            │ ws 9944  │ validator + pylon  │
-   └────────────────────┘            │          │ + metrics          │
-                                     │          └─────────┬──────────┘
+   │ archive 9945       │            │          │ + metrics          │
+   └────────────────────┘            │          └─────────┬──────────┘
                        ┌─────────────┴──────┐    callback │ ▲ POST /task
                        │ refinery-miner      │    :8001 ◀──┘ │  to axon
                        │ 10.0.0.30           │───────────────┘
@@ -168,8 +168,22 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > below GRANDPA's quorum — while the chain quietly stops finalizing; check `docker compose exec
 > subtensor pgrep -c node-subtensor` (expect `3`) and `docker compose restart subtensor` to recover.
 
-The chain is now serving on `ws://10.0.0.10:9944` (VLAN only), running standard **12s blocks** with
-**persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
+> **Archive node.** The three authorities keep only the last ~256 blocks of *state* (Substrate's
+> default state pruning, fixed when the DB is created — it cannot be switched on an existing DB), so
+> reading older state fails with `State already discarded`. Readers that backfill history (the TAO20
+> attester's 8-day price windows) use the separate `archive` service instead: a non-validating full node
+> with `--state-pruning archive` that syncs every block from genesis off authority One (bootnode peer id
+> derived from One's persisted node key, chain spec rebuilt from the same binary) and serves
+> `ws://10.0.0.10:9945`. It is a pure reader — if it dies, block production and finality are untouched,
+> and on restart it resumes syncing; `docker compose logs archive` should show it importing at the
+> authorities' height. A bounded window (`--state-pruning 72000`, RocksDb or ParityDb) is not viable on
+> this box: the node keeps ~65 KB of RAM per block of the window and OOMs at its 1 GiB cap. The archive
+> instead costs **disk**: ~150 KB of state per block, i.e. ~1.1 GB/day — keep an eye on the volume, and
+> to shrink it `docker compose rm -sf archive`, delete the `chain_archive` volume and let it resync
+> (~2.5 blocks/s).
+
+The chain is now serving on `ws://10.0.0.10:9944` (VLAN only; historical state on `ws://10.0.0.10:9945`),
+running standard **12s blocks** with **persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
 create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv`:
 
 ```bash
@@ -394,7 +408,8 @@ image.
   root entry point. (Note: membership in the `docker` group is effectively root-equivalent, so the
   real gains are a disabled root login and tidy per-user state, not container isolation.)
 - **Defense in depth on the VLAN (optional).** Add a host firewall (e.g. `ufw`) restricting the VLAN
-  interface to exactly: `9944` inbound on the chain from the validator + miner IPs; `8001` inbound on
+  interface to exactly: `9944` (and `9945` for archive readers) inbound on the chain from the validator
+  + miner IPs; `8001` inbound on
   the validator from the miner IP; `MINER_AXON_PORT` inbound on the miner from the validator IP.
 - **Devnet keys.** This subnet funds everything from the well-known `//Alice` devnet key on its own
   local chain. It has no economic value and must never be pointed at testnet or mainnet.
@@ -407,4 +422,5 @@ Per machine: `cd <workdir> && docker compose down` and remove the cron line
 (`crontab -l | grep -v REFINERY_ | crontab -`). Named volumes survive a plain `down`: the chain keeps
 its DB (subnet, registrations, stake) and the miner keeps its wallet, so `down` + `up -d` resumes where
 you left off. To **fully reset** — wipe all chain state or the miner wallet — use `docker compose down
--v`, which deletes the volumes. Tearing down the chain machine's volumes discards all subnet state.
+-v`, which deletes the volumes. Tearing down the chain machine's volumes discards all subnet state
+(the archive node's history included).
