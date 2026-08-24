@@ -59,6 +59,63 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Non-validating archive full node: the authorities run with Substrate's default state pruning (the
+  # last ~256 blocks of state only) and the pruning mode of an existing DB cannot be changed, so readers
+  # of historical state (the TAO20 attester backfilling its 8-day price windows) get their own node that
+  # keeps every block's state. A bounded pruning window (--state-pruning 72000, on RocksDb and on ParityDb
+  # alike) is NOT an option on this node: it holds ~65 KB of RAM per block of the window and OOM-killed
+  # the node at the 1 GiB cap around block 9_000 of the initial sync, while the archive stays flat at
+  # ~530 MiB. The price is disk: state costs ~150 KB/block here (~1.1 GB/day on 12 s blocks), so watch
+  # the volume; to shrink it, stop the service, delete the chain_archive volume and let it resync (~2.5
+  # blocks/s). Never an authority, so losing it cannot affect block production or finality.
+  archive:
+    image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    depends_on:
+      - subtensor
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+        BIN=/target/non-fast-runtime/release/node-subtensor
+
+        # Same binary and the same `build-spec --chain local` call as the image's localnet.sh -> a
+        # byte-identical spec, i.e. the same genesis as the authorities.
+        "$$BIN" build-spec --disable-default-bootnode --raw --chain local > /tmp/local.json
+
+        # The bootnode address embeds authority One's peer id; derive it from One's persisted node key
+        # (read-only mount) instead of pinning it here, so a regenerated key never strands this node.
+        PEER_ID=$$("$$BIN" key inspect-node-key --file /one/chains/bittensor/network/secret_ed25519)
+
+        exec "$$BIN" \
+          --base-path /tmp/archive \
+          --chain /tmp/local.json \
+          --name refinery-archive \
+          --state-pruning archive \
+          --bootnodes "/dns/subtensor/tcp/30334/p2p/$$PEER_ID" \
+          --port 30337 \
+          --rpc-port 9945 \
+          --rpc-cors=all \
+          --unsafe-rpc-external \
+          --allow-private-ipv4 \
+          --discover-local \
+          --trie-cache-size 67108864 \
+          --db-cache 64
+    restart: unless-stopped
+    # Same cap pattern as the authorities; an OOM kill here only pauses syncing until the restart.
+    mem_limit: 1g
+    memswap_limit: 1g
+    ports:
+      - "${CHAIN_BIND_IP:?}:9945:9945"
+    volumes:
+      - chain_archive:/tmp/archive
+      - chain_one:/one:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9945'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 # NOTE: chain state is PERSISTENT (volumes below + --no-purge). A restart of this service, an image
 # bump, or a host reboot resume the existing chain - they no longer wipe genesis. The bootstrap step
 # (deploy/linode/README.md) therefore runs once; the validator + miners stay registered across restarts.
@@ -68,3 +125,4 @@ volumes:
   chain_one:
   chain_two:
   chain_three:
+  chain_archive:
