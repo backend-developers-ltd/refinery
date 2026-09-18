@@ -1,3 +1,12 @@
+# Docker's json-file driver keeps container logs forever by default, and the chain services log every
+# block (~25 MB/day for the three authorities): 0.7 GB of /var/lib/docker/containers in three weeks.
+# Cap every service at 5 x 50 MB, i.e. roughly the last ten days of chain logs.
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   subtensor:
     # ghcr.io/opentensor/subtensor-localnet - bump by re-resolving the tag's digest
@@ -12,14 +21,24 @@ services:
         set -euo pipefail
 
         # Cap the per-node caches. Substrate defaults to a 1 GiB trie cache (--trie-cache-size) and a
-        # ~339 MB RocksDB block cache PER NODE; three colocated authorities therefore grow towards ~4 GB
-        # of caches alone - more RAM than this machine has - and the host OOMs every few hours. 64 MiB of
-        # each is ample for a localnet. The patch must be idempotent: a container restart reuses the same
-        # writable layer, so an unconditional sed would append a second set of flags and trip the check
-        # below on every restart. Bail out loudly if the upstream script stops matching, so a bad image
-        # bump fails visibly instead of silently reverting to the 1 GiB default.
+        # 1 GiB RocksDB memory budget (--db-cache, a third of it block cache) PER NODE; three colocated
+        # authorities therefore grow towards ~4 GB of caches alone - more RAM than this machine has - and
+        # the host OOMs every few hours. 64 MiB of trie cache is ample for a localnet.
+        #
+        # --db-cache must stay >= 128 though. Substrate hands 90% of it to the STATE column and splits
+        # the remainder across the other 12 RocksDB columns in whole MiB, so 64 left those columns with a
+        # budget of 0: a 64 KB write buffer and max_bytes_for_level_base=0, which made every flush
+        # rewrite the whole column (measured: write amplification ~70 000, 61 TB rewritten per authority
+        # in 24 days, the compaction thread eating 90% of each node's CPU, and RocksDB's info LOG growing
+        # by 180 MB/day per node). 256 gives each side column 2 MiB for ~210 MB of RocksDB memory per
+        # node (block cache = budget / 3 plus the STATE memtables).
+        #
+        # The patch must be idempotent: a container restart reuses the same writable layer, so an
+        # unconditional sed would append a second set of flags and trip the check below on every
+        # restart. Bail out loudly if the upstream script stops matching, so a bad image bump fails
+        # visibly instead of silently reverting to the 1 GiB defaults.
         if ! grep -q -- '--trie-cache-size' /scripts/localnet.sh; then
-          sed -i 's/^\( *\)--unsafe-force-node-key-generation$$/\1--unsafe-force-node-key-generation\n\1--trie-cache-size 67108864\n\1--db-cache 64/' /scripts/localnet.sh
+          sed -i 's/^\( *\)--unsafe-force-node-key-generation$$/\1--unsafe-force-node-key-generation\n\1--trie-cache-size 67108864\n\1--db-cache 256/' /scripts/localnet.sh
         fi
         capped=$$(grep -c -- '--trie-cache-size' /scripts/localnet.sh || true)
         if [ "$$capped" != "3" ]; then
@@ -35,6 +54,7 @@ services:
     # so no toolchain is needed. These reach localnet.sh through the wrapper's "$@".
     command: ["False", "--no-purge"]
     restart: unless-stopped
+    logging: *bounded-logging
     # Hard ceiling so a runaway node hits the cgroup limit instead of the host's OOM killer picking a
     # victim of its own choosing (last time it left the box thrashing at load 98 with sshd barely
     # answering). memswap_limit equal to mem_limit disables swap for the container: thrashing the host's
@@ -66,9 +86,12 @@ services:
   # keeps every block's state. A bounded pruning window (--state-pruning 72000, on RocksDb and on ParityDb
   # alike) is NOT an option on this node: it holds ~65 KB of RAM per block of the window and OOM-killed
   # the node at the 1 GiB cap around block 9_000 of the initial sync, while the archive stays flat at
-  # ~530 MiB. The price is disk: state costs ~150 KB/block here (~1.1 GB/day on 12 s blocks), so watch
-  # the volume; to shrink it, stop the service, delete the chain_archive volume and let it resync (~2.5
-  # blocks/s). Never an authority, so losing it cannot affect block production or finality.
+  # ~530 MiB. The price is disk: the archive keeps every trie node ever written, ~60 KB of state per
+  # idle block (~0.4 GB/day on 12 s blocks, ~150 KB/block while the Drand pallet catches up), and a
+  # resync from genesis rebuilds exactly that history - deleting the chain_archive volume reclaims only
+  # RocksDB slack (WAL, obsolete SSTs, the info LOG), never the state itself. More disk is the only real
+  # remedy, so watch the volume. Never an authority, so losing it cannot affect block production or
+  # finality.
   archive:
     image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
     depends_on:
@@ -101,8 +124,9 @@ services:
           --allow-private-ipv4 \
           --discover-local \
           --trie-cache-size 67108864 \
-          --db-cache 64
+          --db-cache 256
     restart: unless-stopped
+    logging: *bounded-logging
     # Same cap pattern as the authorities; an OOM kill here only pauses syncing until the restart.
     mem_limit: 1g
     memswap_limit: 1g

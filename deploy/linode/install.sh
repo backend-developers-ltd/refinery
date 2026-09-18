@@ -46,15 +46,35 @@ printf -v ROLE_Q "%q" "${ROLE}"
 printf -v ENV_NAME_Q "%q" "${ENV_NAME}"
 printf -v WORKING_DIRECTORY_Q "%q" "${WORKING_DIRECTORY}"
 
+# Replaces the user's crontab line tagged with $1 (or appends it) with the cron line $2.
+install_cron_line() {
+    local tag="$1"
+    local cmd="$2"
+    local existing_crontab filtered_crontab
+    existing_crontab="$(crontab -l 2>/dev/null || true)"
+    filtered_crontab="$(printf "%s\n" "${existing_crontab}" | grep -F -v "${tag}" || true)"
+    if [ -n "${filtered_crontab}" ]; then
+        { printf "%s\n" "${filtered_crontab}"; printf "%s\n" "${cmd}"; } | crontab -
+    else
+        printf "%s\n" "${cmd}" | crontab -
+    fi
+}
+
 CRON_TAG="REFINERY_${ROLE^^}_UPDATE"
 CRON_CMD="*/15 * * * * curl -fsSL ${UPDATE_URL_Q} -o ${UPDATE_SCRIPT_Q} && chmod +x ${UPDATE_SCRIPT_Q} && ${UPDATE_SCRIPT_Q} ${ROLE_Q} ${ENV_NAME_Q} ${WORKING_DIRECTORY_Q} # ${CRON_TAG}"
+install_cron_line "${CRON_TAG}" "${CRON_CMD}"
 
-EXISTING_CRONTAB="$(crontab -l 2>/dev/null || true)"
-FILTERED_CRONTAB="$(printf "%s\n" "${EXISTING_CRONTAB}" | grep -F -v "${CRON_TAG}" || true)"
-if [ -n "${FILTERED_CRONTAB}" ]; then
-    { printf "%s\n" "${FILTERED_CRONTAB}"; printf "%s\n" "${CRON_CMD}"; } | crontab -
-else
-    printf "%s\n" "${CRON_CMD}" | crontab -
+if [ "${ROLE}" = "localchain" ]; then
+    # RocksDB's info LOG (<volume>/chains/<chain>/db/full/LOG) is never rotated by Substrate, so it grows
+    # for the container's whole lifetime. Truncate, once a week, any LOG whose ALLOCATED size (du, not
+    # the apparent size: truncating in place leaves a sparse file RocksDB keeps appending to) exceeds
+    # 256 MB. Compose names the volumes after the working directory: <dir>_chain_one, _two, _three,
+    # _archive.
+    PROJECT_NAME="$(basename "${WORKING_DIRECTORY}")"
+    printf -v LOG_PATH_Q "%q" "/var/lib/docker/volumes/${PROJECT_NAME}_chain_*/_data/chains/*/db/full/LOG"
+    LOG_CRON_TAG="REFINERY_LOCALCHAIN_ROCKSDB_LOG"
+    LOG_CRON_CMD="0 4 * * 0 sudo find /var/lib/docker/volumes -path ${LOG_PATH_Q} -exec du -k {} + | awk '\$1 > 262144 {print \$2}' | xargs -r sudo truncate -s 0 # ${LOG_CRON_TAG}"
+    install_cron_line "${LOG_CRON_TAG}" "${LOG_CRON_CMD}"
 fi
 
 echo "Cron job installed successfully. It will run every 15 minutes."
