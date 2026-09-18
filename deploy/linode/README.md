@@ -122,7 +122,8 @@ repository, following the official guide:
 <https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository>. (Use the apt-repository
 method, not the convenience script — the latter is explicitly not recommended for production.)
 
-Then add your user to the `docker` group and install cron (used by the auto-update job):
+Then add your user to the `docker` group, install cron (used by the auto-update job) and cap the systemd
+journal, which otherwise grows to 10% of the disk before it starts pruning itself:
 
 ```bash
 sudo usermod -aG docker "$USER"   # log out/in afterwards so the group takes effect
@@ -130,9 +131,15 @@ sudo usermod -aG docker "$USER"   # log out/in afterwards so the group takes eff
 # cron (used by the auto-update job)
 sudo apt-get update && sudo apt-get install -y cron
 sudo systemctl enable --now cron
+
+# journald: the stock cap is 10% of the filesystem (8 GB on an 80 GB disk). Skip this if your host
+# management already ships a cap (check /etc/systemd/journald.conf.d/ - drop-ins sorting later win).
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nSystemMaxUse=1G\n' | sudo tee /etc/systemd/journald.conf.d/50-refinery.conf
+sudo systemctl restart systemd-journald
 ```
 
-Verify: `docker compose version` and `systemctl is-active cron`.
+Verify: `docker compose version`, `systemctl is-active cron` and `journalctl --disk-usage`.
 
 ---
 
@@ -157,16 +164,22 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > `printf 'vm.overcommit_memory=1\nvm.max_map_count=262144\n' | sudo tee /etc/sysctl.d/99-subtensor.conf`,
 > then `docker compose up -d`.
 
-> **Memory caps.** Substrate defaults to a **1 GiB trie cache plus a ~339 MB RocksDB block cache per
-> node**, so the three authorities grow towards ~4 GB of caches alone and OOM-kill the machine every few
-> hours. `deploy/linode/localchain/docker-compose.yml` therefore wraps the image's entrypoint to patch
-> `--trie-cache-size 67108864 --db-cache 64` into each authority's argv (the image's `localnet.sh`
-> hardcodes them and takes no node flags of its own), and runs the container under a 3 GB `mem_limit`
-> with swap disabled. If an image bump changes `localnet.sh` so the patch stops applying, the container
-> refuses to start and logs `FATAL: expected to cap 3 authorities' caches`. Note that an OOM kill lands
-> on a single `node-subtensor`, never on PID 1, so the container can stay "up" with 2/3 authorities —
-> below GRANDPA's quorum — while the chain quietly stops finalizing; check `docker compose exec
-> subtensor pgrep -c node-subtensor` (expect `3`) and `docker compose restart subtensor` to recover.
+> **Memory caps.** Substrate defaults to a **1 GiB trie cache plus a 1 GiB RocksDB memory budget per
+> node** (a third of the budget is block cache), so the three authorities grow towards ~4 GB of caches
+> alone and OOM-kill the machine every few hours. `deploy/linode/localchain/docker-compose.yml` therefore
+> wraps the image's entrypoint to patch `--trie-cache-size 67108864 --db-cache 256` into each authority's
+> argv (the image's `localnet.sh` hardcodes them and takes no node flags of its own), and runs the
+> container under a 3 GB `mem_limit` with swap disabled. **Never set `--db-cache` below 128.** Substrate
+> hands 90% of it to the STATE column and splits the rest across the other 12 RocksDB columns in whole
+> MiB, so 64 left those columns with a budget of 0 (64 KB write buffers, `max_bytes_for_level_base=0`)
+> and every flush rewrote a whole column: write amplification ~70 000, 61 TB rewritten per authority in
+> 24 days, the compaction thread at 90% of each node's CPU and RocksDB's info `LOG` growing 180 MB/day per
+> node. 256 gives each side column 2 MiB for ~210 MB of RocksDB memory per node. If an image bump changes
+> `localnet.sh` so the patch stops applying, the container refuses to start and logs `FATAL: expected to
+> cap 3 authorities' caches`. Note that an OOM kill lands on a single `node-subtensor`, never on PID 1, so
+> the container can stay "up" with 2/3 authorities — below GRANDPA's quorum — while the chain quietly
+> stops finalizing; check `docker compose exec subtensor pgrep -c node-subtensor` (expect `3`) and
+> `docker compose restart subtensor` to recover.
 
 > **Archive node.** The three authorities keep only the last ~256 blocks of *state* (Substrate's
 > default state pruning, fixed when the DB is created — it cannot be switched on an existing DB), so
@@ -178,9 +191,19 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > and on restart it resumes syncing; `docker compose logs archive` should show it importing at the
 > authorities' height. A bounded window (`--state-pruning 72000`, RocksDb or ParityDb) is not viable on
 > this box: the node keeps ~65 KB of RAM per block of the window and OOMs at its 1 GiB cap. The archive
-> instead costs **disk**: ~150 KB of state per block, i.e. ~1.1 GB/day — keep an eye on the volume, and
-> to shrink it `docker compose rm -sf archive`, delete the `chain_archive` volume and let it resync
-> (~2.5 blocks/s).
+> instead costs **disk**: it keeps every trie node ever written, ~60 KB of state per idle block, i.e.
+> ~0.4 GB/day (up to ~150 KB/block while the Drand pallet catches up). A resync from genesis rebuilds
+> exactly that history, so deleting the `chain_archive` volume only reclaims RocksDB slack (WAL,
+> obsolete SSTs, the info `LOG`), never the state itself — more disk is the only real remedy. Keep an eye
+> on the volume.
+
+> **Disk hygiene.** Three things on this box grow without bound unless capped: container logs (the
+> compose file caps every service at 5 × 50 MB via the json-file driver), the systemd journal (capped in
+> §1.5) and RocksDB's info `LOG` inside each chain volume, which Substrate never rotates. The installer
+> therefore adds a weekly cron (`REFINERY_LOCALCHAIN_ROCKSDB_LOG`, Sunday 04:00) that truncates any of
+> those `LOG` files whose allocated size exceeds 256 MB; truncating in place is safe, RocksDB keeps
+> appending and the file merely turns sparse. The WAL sawtooth is normal: RocksDB keeps up to ~1 GB of
+> write-ahead log per node and purges it in one go roughly daily, so keep at least ~6 GB of headroom on `/`.
 
 The chain is now serving on `ws://10.0.0.10:9944` (VLAN only; historical state on `ws://10.0.0.10:9945`),
 running standard **12s blocks** with **persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
@@ -345,6 +368,7 @@ Every machine runs a 15-minute cron job that re-pulls its docker-compose from `d
 restarts the stack **only if the file changed** (i.e. when a new image digest is pinned):
 
 - chain: cron tag `REFINERY_LOCALCHAIN_UPDATE`, compose `deploy/linode/localchain/docker-compose.yml`
+  (plus the weekly `REFINERY_LOCALCHAIN_ROCKSDB_LOG` truncation job, see the disk-hygiene note in §2)
 - miner: cron tag `REFINERY_MINER_UPDATE`, compose `deploy/linode/miner/docker-compose.yml`
 - validator: cron tag from the top-level installer, compose `envs/deployed/docker-compose.yml`
 
