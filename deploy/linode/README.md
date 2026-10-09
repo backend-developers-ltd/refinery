@@ -464,7 +464,7 @@ you left off. To **fully reset** — wipe all chain state or the miner wallet �
 Other projects create their own subnets on this chain (netuid 3 and up). The `multi-validator` role runs
 **one** Refinery validator on all of them at once, so each of those subnets gets a validator that sets
 weights and the miner machine's miner earns incentive on each. It needs one more machine,
-`refinery-multi-validator` (here `10.0.0.60`; 1 vCPU / 2 GB is enough), set up as in §1, and reuses
+`refinery-multi-validator` (here `10.0.0.70`; 1 vCPU / 2 GB is enough), set up as in §1, and reuses
 the miner machine: the miner registers on the same subnets and serves all of them from its one axon.
 
 One process covers many subnets like this: each block challenges a miner of the next subnet in
@@ -517,6 +517,13 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 
 The validator advertises `http://<VALIDATOR_VLAN_IP>:8001` as its callback URL and the compose file
 publishes `8001` on that IP only; open it to the miner machine.
+
+> **Use a VLAN IP no other machine has.** The chain's ARP entry for a duplicated IP flips between the two
+> machines, so its replies keep landing on the wrong one: idle connections to the chain die after 15-45 s
+> (the other machine answers with a RST) while short requests mostly work. Pylon then hangs on its chain
+> websocket and recreates it in a loop (`recreating_bittensor_contact` bursts, `HTTP 500/504` on
+> `/api/v1/block/latest`). Compare `ip neigh show <ip>` on the chain machine with `ip link` on the
+> validator.
 
 ### 10.3 Point the miner at the same subnets
 
