@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import cast
@@ -11,6 +9,7 @@ from nexus.v1 import (
     BlockNumber,
     Epoch,
     Hotkey,
+    NetUid,
     NexusTaskName,
     TaskResultStore,
     WeightsCalculationBundle,
@@ -20,6 +19,8 @@ from validator.proof_of_work import PowChallenge, PowSolution, leading_zero_bits
 from validator.weighing import PowWeighing
 
 TASK_NAME = NexusTaskName("pow_challenge")
+NETUID = NetUid(3)
+OTHER_NETUID = NetUid(5)
 BASE_TIME = datetime(2026, 1, 1, 12, 0, 0)
 
 
@@ -56,22 +57,26 @@ class _Result:
     processing_finished: datetime
 
 
+@dataclass(frozen=True)
+class _Failure:
+    target: _Target
+    executor_payload: PowChallenge
+
+
 class _FakeStore:
-    def __init__(self, successes: list[_Result], failures: Mapping[str, int]) -> None:
+    def __init__(self, successes: list[_Result], failures: list[_Failure]) -> None:
         self._successes = successes
         self._failures = failures
 
     def get_successful_tasks_for_epoch(self, _task_name: NexusTaskName, _epoch: Epoch) -> tuple[_Result, ...]:
         return tuple(self._successes)
 
-    def count_executor_failures_by_hotkey_for_epoch(
-        self, _task_name: NexusTaskName, _epoch: Epoch
-    ) -> Mapping[Hotkey, int]:
-        return Counter({Hotkey(hotkey): count for hotkey, count in self._failures.items()})
+    def get_executor_failures_for_epoch(self, _task_name: NexusTaskName, _epoch: Epoch) -> tuple[_Failure, ...]:
+        return tuple(self._failures)
 
 
-def _solved_result(hotkey: str, difficulty: int, latency_s: float) -> _Result:
-    challenge = new_challenge(block_number=1, difficulty=difficulty)
+def _solved_result(hotkey: str, difficulty: int, latency_s: float, netuid: NetUid = NETUID) -> _Result:
+    challenge = new_challenge(netuid=netuid, block_number=1, difficulty=difficulty)
     return _Result(
         target=_Target(hotkey=hotkey),
         executor_payload=challenge,
@@ -82,7 +87,7 @@ def _solved_result(hotkey: str, difficulty: int, latency_s: float) -> _Result:
 
 
 def _wrong_result(hotkey: str, difficulty: int, latency_s: float) -> _Result:
-    challenge = new_challenge(block_number=1, difficulty=difficulty)
+    challenge = new_challenge(netuid=NETUID, block_number=1, difficulty=difficulty)
     return _Result(
         target=_Target(hotkey=hotkey),
         executor_payload=challenge,
@@ -90,6 +95,24 @@ def _wrong_result(hotkey: str, difficulty: int, latency_s: float) -> _Result:
         processing_started=BASE_TIME,
         processing_finished=BASE_TIME + timedelta(seconds=latency_s),
     )
+
+
+def _failure(hotkey: str, netuid: NetUid = NETUID) -> _Failure:
+    return _Failure(
+        target=_Target(hotkey=hotkey), executor_payload=new_challenge(netuid=netuid, block_number=1, difficulty=8)
+    )
+
+
+def _bundle(store: _FakeStore) -> WeightsCalculationBundle:
+    return WeightsCalculationBundle(
+        epoch=Epoch(first_block=BlockNumber(0), last_block=BlockNumber(1000)),
+        tasks_result_store=cast(TaskResultStore[object, object, object], store),
+    )
+
+
+@pytest.fixture
+def weighing() -> PowWeighing:
+    return PowWeighing(task_name=TASK_NAME, netuid=NETUID, speed_weight=0.25, target_latency_s=1.0)
 
 
 @pytest.fixture
@@ -102,16 +125,21 @@ def bundle() -> WeightsCalculationBundle:
         _solved_result("wrong", difficulty=8, latency_s=0.5),
         _wrong_result("wrong", difficulty=8, latency_s=0.5),
     ]
-    store = _FakeStore(successes=successes, failures={"timeout": 2})
-    return WeightsCalculationBundle(
-        epoch=Epoch(first_block=BlockNumber(0), last_block=BlockNumber(1000)),
-        tasks_result_store=cast(TaskResultStore[object, object, object], store),
-    )
+    return _bundle(_FakeStore(successes=successes, failures=[_failure("timeout"), _failure("timeout")]))
 
 
-def test_weighing_rewards_correctness_and_speed(bundle: WeightsCalculationBundle) -> None:
-    weighing = PowWeighing(task_name=TASK_NAME, speed_weight=0.25, target_latency_s=1.0)
+@pytest.fixture
+def mixed_subnets_bundle() -> WeightsCalculationBundle:
+    successes = [
+        _solved_result("both", difficulty=8, latency_s=0.5),
+        _solved_result("both", difficulty=8, latency_s=0.5, netuid=OTHER_NETUID),
+        _solved_result("elsewhere", difficulty=8, latency_s=0.5, netuid=OTHER_NETUID),
+    ]
+    failures = [_failure("both", netuid=OTHER_NETUID), _failure("elsewhere-timeout", netuid=OTHER_NETUID)]
+    return _bundle(_FakeStore(successes=successes, failures=failures))
 
+
+def test_weighing_rewards_correctness_and_speed(weighing: PowWeighing, bundle: WeightsCalculationBundle) -> None:
     weights = weighing(bundle)
 
     assert weights == pytest.approx(  # pyright: ignore[reportUnknownMemberType]
@@ -124,11 +152,11 @@ def test_weighing_rewards_correctness_and_speed(bundle: WeightsCalculationBundle
     )
 
 
-def test_weighing_is_empty_without_results() -> None:
-    weighing = PowWeighing(task_name=TASK_NAME, speed_weight=0.25, target_latency_s=1.0)
-    empty = WeightsCalculationBundle(
-        epoch=Epoch(first_block=BlockNumber(0), last_block=BlockNumber(1000)),
-        tasks_result_store=cast(TaskResultStore[object, object, object], _FakeStore(successes=[], failures={})),
-    )
+def test_weighing_counts_only_its_own_subnet(
+    weighing: PowWeighing, mixed_subnets_bundle: WeightsCalculationBundle
+) -> None:
+    assert weighing(mixed_subnets_bundle) == {Hotkey("both"): 1.25}
 
-    assert weighing(empty) == {}
+
+def test_weighing_is_empty_without_results(weighing: PowWeighing) -> None:
+    assert weighing(_bundle(_FakeStore(successes=[], failures=[]))) == {}

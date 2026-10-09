@@ -13,6 +13,7 @@ import hashlib
 import os
 import uuid
 
+from nexus.v1 import NetUid
 from pydantic import BaseModel
 
 SEED_BYTES = 32
@@ -20,9 +21,10 @@ SEED_BYTES = 32
 
 
 class PowChallenge(BaseModel):
-    """A proof-of-work challenge sent by the validator to a miner."""
+    """A proof-of-work challenge sent by the validator to a miner of the ``netuid`` subnet."""
 
     challenge_id: str
+    netuid: NetUid
     seed: str
     difficulty: int
     block_number: int
@@ -57,10 +59,11 @@ def solution_is_valid(seed: str, nonce: str, difficulty: int) -> bool:
     return leading_zero_bits(pow_digest(seed, nonce)) >= difficulty
 
 
-def new_challenge(block_number: int, difficulty: int) -> PowChallenge:
-    """Create a fresh challenge with a random seed for the given block and difficulty."""
+def new_challenge(netuid: NetUid, block_number: int, difficulty: int) -> PowChallenge:
+    """Create a fresh challenge with a random seed for a miner of the subnet, block and difficulty."""
     return PowChallenge(
         challenge_id=uuid.uuid4().hex,
+        netuid=netuid,
         seed=os.urandom(SEED_BYTES).hex(),
         difficulty=difficulty,
         block_number=block_number,

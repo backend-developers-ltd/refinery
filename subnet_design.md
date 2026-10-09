@@ -179,7 +179,7 @@ CPUs under sustained, observable load.
 |--------------------------|------------------------------------------------------------------------|
 | `MINER_RESPONSE_DELAY_S` | Artificial delay before returning a solution. Simulates a slow miner.   |
 | `MINER_NAME`             | Wallet/instance name (so several differently-tuned miners coexist).     |
-| `MINER_NETUID`           | Subnet to register on (localnet default `2`).                           |
+| `MINER_NETUIDS`          | Comma-separated subnets to register on (localnet default `2`).          |
 
 Running, say, three miners with `MINER_RESPONSE_DELAY_S = 0 / 1 / 4` on localnet lets us watch the speed
 bonus spread the weights, and pushing one miner's delay past `VALIDATOR_CHALLENGE_DEADLINE` lets us watch

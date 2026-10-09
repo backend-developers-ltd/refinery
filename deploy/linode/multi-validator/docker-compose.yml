@@ -1,0 +1,62 @@
+# The Refinery validator on many subnets at once (every netuid in NETUIDS), reached over the VLAN.
+# Only pylon + validator: the metrics stack of envs/deployed/ signs for a single netuid.
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  pylon:
+    # backenddevelopersltd/bittensor-pylon:2.3.2 - bump by re-resolving the tag's digest.
+    image: backenddevelopersltd/bittensor-pylon@sha256:6d6dd6a79bb313f0bdd6b2833f193ac16b59738eee6138652d4418a8da0dd352
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *bounded-logging
+    environment:
+      PYLON_BITTENSOR_NETWORK: "ws://${CHAIN_VLAN_IP:?}:9944"
+      PYLON_BITTENSOR_ARCHIVE_NETWORK: "ws://${CHAIN_VLAN_IP:?}:9945"
+      PYLON_OPEN_ACCESS_TOKEN: "${VALIDATOR_PYLON_OPEN_ACCESS_TOKEN:?}"
+      PYLON_BITTENSOR_WALLET_PATH: "/wallets"
+      PYLON_BLOCK_DURATION_SECONDS: "12"
+      NETUIDS: "${NETUIDS:?}"
+      WALLET_NAME: "${BITTENSOR_WALLET_NAME:?}"
+      HOTKEY_NAME: "${BITTENSOR_WALLET_HOTKEY_NAME:?}"
+      IDENTITY_TOKEN: "${VALIDATOR_PYLON_IDENTITY_TOKEN:?}"
+    # A pylon identity binds a wallet to exactly one netuid, so export one identity per subnet
+    # (sn<netuid>, all backed by the same wallet and token), then run the image's own command.
+    command:
+      - sh
+      - -euc
+      - |
+        identities=
+        for netuid in $$(echo "$$NETUIDS" | tr ',' ' '); do
+          identities="$$identities,\"sn$$netuid\""
+          export "PYLON_ID_SN$${netuid}_WALLET_NAME=$$WALLET_NAME" "PYLON_ID_SN$${netuid}_HOTKEY_NAME=$$HOTKEY_NAME"
+          export "PYLON_ID_SN$${netuid}_NETUID=$$netuid" "PYLON_ID_SN$${netuid}_TOKEN=$$IDENTITY_TOKEN"
+        done
+        export PYLON_IDENTITIES="[$${identities#,}]"
+        exec pylon_service/.venv/bin/python -m pylon_service.uvicorn_entrypoint
+    volumes:
+      - "${HOST_WALLET_DIR:?}:/wallets:ro"
+
+  validator:
+    # Pinned on promotion - see deploy/linode/README.md ("Promote the validator image").
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    restart: unless-stopped
+    # Nexus keeps every pipeline context in memory for the process lifetime. The cap turns that slow
+    # growth into a container restart (losing the current epoch's results) before it starves the host.
+    mem_limit: 768m
+    logging: *bounded-logging
+    env_file: ./.env
+    environment:
+      VALIDATOR_NETUIDS: "${NETUIDS:?}"
+      VALIDATOR_PYLON_SERVICE_ADDRESS: "http://pylon:8000"
+      VALIDATOR_PYLON_IDENTITY_NAME: "sn{netuid}"
+      VALIDATOR_OTEL_NETUID: "${NETUIDS:?}"
+      # Miners POST solutions to http://<VALIDATOR_VLAN_IP>:8001/callback; published on the VLAN only.
+      VALIDATOR_CALLBACK_HOST: "${VALIDATOR_VLAN_IP:?}"
+    ports:
+      - "${VALIDATOR_VLAN_IP:?}:8001:8001"
+    depends_on:
+      - pylon

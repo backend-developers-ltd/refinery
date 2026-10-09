@@ -11,7 +11,7 @@ This is local-only test infrastructure for the Refinery subnet, never a producti
 Config (environment variables):
 - MINER_NAME: wallet/instance name (default "honest")
 - MINER_RESPONSE_DELAY_S: extra seconds to wait before answering (default 0)
-- MINER_NETUID: subnet to register on (default 2)
+- MINER_NETUIDS: comma-separated subnets to register and serve the axon on (default 2)
 - MINER_SUBTENSOR_NETWORK: subtensor ws endpoint (default ws://127.0.0.1:9944)
 - MINER_WALLET_DIR: directory holding the miner wallets (default ../localnet/wallets)
 - MINER_AXON_EXTERNAL_IP: IP advertised on-chain for the axon (default 127.0.0.2);
@@ -56,7 +56,7 @@ WALLETS_DIR = Path(
     os.environ.get("MINER_WALLET_DIR", str(Path(__file__).resolve().parent.parent / "localnet" / "wallets"))
 )
 SUBTENSOR_NETWORK = os.environ.get("MINER_SUBTENSOR_NETWORK", "ws://127.0.0.1:9944")
-NETUID = int(os.environ.get("MINER_NETUID", "2"))
+NETUIDS = tuple(int(netuid) for netuid in os.environ.get("MINER_NETUIDS", "2").split(","))
 AXON_EXTERNAL_IP = os.environ.get("MINER_AXON_EXTERNAL_IP", "127.0.0.2")
 AXON_PORT = int(os.environ.get("MINER_AXON_PORT", "0"))
 FUND_AMOUNT_TAO = 1000.0
@@ -192,6 +192,29 @@ def find_free_port() -> int:
                 return port
 
 
+def register_on_subnet(subtensor: bt.Subtensor, wallet: Wallet, instance_name: str, netuid: int) -> None:
+    """Burn-register the wallet's hotkey on the subnet unless it already is."""
+    if subtensor.is_hotkey_registered(wallet.hotkey.ss58_address, netuid):
+        print(f"[{instance_name}] Already registered on subnet {netuid}")
+        return
+    # Register on subnet (retry — same nonce contention can happen here)
+    for attempt in range(5):
+        print(f"[{instance_name}] Registering on subnet {netuid}... (attempt {attempt + 1}/5)")
+        response = subtensor.burned_register(
+            wallet=wallet,
+            netuid=netuid,
+            wait_for_inclusion=True,
+            wait_for_finalization=True,
+            mev_protection=False,
+        )
+        if response.success:
+            return
+        print(f"[{instance_name}] Registration failed: {response.message}, retrying...")
+        time.sleep(3 + attempt * 2)
+    print(f"[{instance_name}] Registration on subnet {netuid} failed after 5 attempts")
+    sys.exit(1)
+
+
 def setup_and_serve(instance_name: str) -> None:
     """Idempotent setup then serve. Runs in its own process."""
     port = AXON_PORT or find_free_port()
@@ -223,32 +246,12 @@ def setup_and_serve(instance_name: str) -> None:
             print(f"[{instance_name}] Funding failed after 5 attempts")
             sys.exit(1)
 
-    # Register on subnet (retry — same nonce contention can happen here)
-    if not subtensor.is_hotkey_registered(wallet.hotkey.ss58_address, NETUID):
-        for attempt in range(5):
-            print(f"[{instance_name}] Registering on subnet {NETUID}... (attempt {attempt + 1}/5)")
-            response = subtensor.burned_register(
-                wallet=wallet,
-                netuid=NETUID,
-                wait_for_inclusion=True,
-                wait_for_finalization=True,
-                mev_protection=False,
-            )
-            if response.success:
-                break
-            print(f"[{instance_name}] Registration failed: {response.message}, retrying...")
-            time.sleep(3 + attempt * 2)
-        else:
-            print(f"[{instance_name}] Registration failed after 5 attempts")
-            sys.exit(1)
-    else:
-        print(f"[{instance_name}] Already registered")
-
-    print(f"[{instance_name}] Setting axon info: {AXON_EXTERNAL_IP}:{port}")
-    subtensor.serve_axon(
-        netuid=NETUID,
-        axon=bt.Axon(wallet=wallet, port=port, ip=AXON_EXTERNAL_IP, external_ip=AXON_EXTERNAL_IP),
-    )
+    # One axon serves every subnet: the challenge does not depend on the subnet it came from.
+    axon = bt.Axon(wallet=wallet, port=port, ip=AXON_EXTERNAL_IP, external_ip=AXON_EXTERNAL_IP)
+    for netuid in NETUIDS:
+        register_on_subnet(subtensor, wallet, instance_name, netuid)
+        print(f"[{instance_name}] Setting axon info on subnet {netuid}: {AXON_EXTERNAL_IP}:{port}")
+        subtensor.serve_axon(netuid=netuid, axon=axon)
 
     print(f"[{instance_name}] Serving on 0.0.0.0:{port}{TARGET_PATH} (response_delay_s={RESPONSE_DELAY_S})")
     app = Litestar(route_handlers=[ack_task])

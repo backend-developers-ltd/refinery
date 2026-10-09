@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from nexus.v1 import NetUid
 
 from validator.proof_of_work import (
     SEED_BYTES,
@@ -9,6 +10,8 @@ from validator.proof_of_work import (
     pow_digest,
     solution_is_valid,
 )
+
+NETUID = NetUid(3)
 
 
 @pytest.mark.parametrize(
@@ -35,26 +38,26 @@ def _solve(seed: str, difficulty: int) -> str:
 
 
 def test_solution_is_valid_for_solved_nonce() -> None:
-    challenge = new_challenge(block_number=10, difficulty=8)
+    challenge = new_challenge(netuid=NETUID, block_number=10, difficulty=8)
     nonce = _solve(challenge.seed, challenge.difficulty)
     assert solution_is_valid(challenge.seed, nonce, challenge.difficulty) is True
 
 
 def test_solution_is_invalid_for_tampered_nonce() -> None:
-    challenge = new_challenge(block_number=10, difficulty=8)
+    challenge = new_challenge(netuid=NETUID, block_number=10, difficulty=8)
     nonce = _solve(challenge.seed, challenge.difficulty)
     assert solution_is_valid(challenge.seed, nonce + "0", challenge.difficulty) is False
 
 
 def test_solution_is_invalid_against_a_different_seed() -> None:
-    challenge = new_challenge(block_number=10, difficulty=8)
-    other = new_challenge(block_number=11, difficulty=8)
+    challenge = new_challenge(netuid=NETUID, block_number=10, difficulty=8)
+    other = new_challenge(netuid=NETUID, block_number=11, difficulty=8)
     nonce = _solve(challenge.seed, challenge.difficulty)
     assert solution_is_valid(other.seed, nonce, challenge.difficulty) is False
 
 
 def test_new_challenge_carries_inputs_and_has_random_seed() -> None:
-    challenge = new_challenge(block_number=42, difficulty=20)
-    assert (challenge.block_number, challenge.difficulty) == (42, 20)
+    challenge = new_challenge(netuid=NETUID, block_number=42, difficulty=20)
+    assert (challenge.netuid, challenge.block_number, challenge.difficulty) == (NETUID, 42, 20)
     assert len(bytes.fromhex(challenge.seed)) == SEED_BYTES
-    assert challenge.seed != new_challenge(block_number=42, difficulty=20).seed
+    assert challenge.seed != new_challenge(netuid=NETUID, block_number=42, difficulty=20).seed

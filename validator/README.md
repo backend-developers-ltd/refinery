@@ -30,7 +30,8 @@ All settings are `VALIDATOR_*` environment variables (defaults in parentheses):
 
 | Variable                          | Effect                                                                 |
 |-----------------------------------|------------------------------------------------------------------------|
-| `VALIDATOR_NETUID`                | Subnet netuid the validator runs on (required).                        |
+| `VALIDATOR_NETUIDS`               | Comma-separated subnets the validator runs on (required; `NETUID` also works). |
+| `VALIDATOR_PYLON_IDENTITY_NAME`   | Pylon identity that sets weights; with several subnets it must contain `{netuid}` (e.g. `sn{netuid}`). |
 | `VALIDATOR_DIFFICULTY` (16)       | **Primary load knob** — required leading zero bits; +1 ≈ 2× the work.   |
 | `VALIDATOR_CHALLENGE_DEADLINE` (10s) | Per-challenge end-to-end deadline; later answers count as failures. |
 | `VALIDATOR_SEND_TIMEOUT` (2s)     | Timeout for the initial request to a miner.                            |

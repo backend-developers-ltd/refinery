@@ -6,7 +6,7 @@ services:
     env_file: ./.env
     environment:
       MINER_SUBTENSOR_NETWORK: "ws://${CHAIN_VLAN_IP:?}:9944"
-      MINER_NETUID: "${NETUID:?}"
+      MINER_NETUIDS: "${NETUIDS:?}"
       MINER_NAME: "${MINER_NAME:-honest}"
       MINER_RESPONSE_DELAY_S: "${MINER_RESPONSE_DELAY_S:-0}"
       # Advertised on-chain so the validator can reach this miner's axon over the VLAN.
