@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Pulls the latest deploy/linode/<ROLE>/docker-compose.yml from the deploy-config-${ENV_NAME} branch
-# and restarts the role's stack if anything changed. Roles: localchain, miner.
-# (The validator role uses the top-level installer/ scripts and envs/deployed/docker-compose.yml.)
+# and restarts the role's stack if anything changed. Roles: localchain, miner, multi-validator.
+# (The single-subnet validator uses the top-level installer/ scripts and envs/deployed/docker-compose.yml.)
 
 set -euo pipefail
 
-ROLE="${1:?Usage: update_compose.sh <localchain|miner> [ENV_NAME] [WORKING_DIRECTORY]}"
+ROLE="${1:?Usage: update_compose.sh <localchain|miner|multi-validator> [ENV_NAME] [WORKING_DIRECTORY]}"
 ENV_NAME="${2:-prod}"
 WORKING_DIRECTORY="${3:-$HOME/refinery-${ROLE}/}"
 
 case "${ROLE}" in
-    localchain|miner) ;;
-    *) echo "Unsupported role: ${ROLE} (expected localchain or miner)" >&2; exit 1 ;;
+    localchain|miner|multi-validator) ;;
+    *) echo "Unsupported role: ${ROLE} (expected localchain, miner or multi-validator)" >&2; exit 1 ;;
 esac
 
 mkdir -p "${WORKING_DIRECTORY}"

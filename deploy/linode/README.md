@@ -7,13 +7,17 @@ This directory deploys the full Refinery subnet across **three Linode machines**
 | **chain** | `refinery-chain` | `subtensor-localnet` (own local blockchain) + an archive full node | `deploy/linode/localchain/docker-compose.yml` |
 | **validator** | `refinery-validator` | validator + pylon + full metrics stack | `envs/deployed/docker-compose.yml` (the standard prod stack) |
 | **miner** | `refinery-miner` | the `refinery-miner` test-fixture miner | `deploy/linode/miner/docker-compose.yml` |
+| **multi-validator** (optional) | `refinery-multi-validator` | validator + pylon on every subnet from netuid 3 up | `deploy/linode/multi-validator/docker-compose.yml` |
 
 Linode is just a (more elaborate) **prod instance**: it runs the *same* published images
 (`refinery-validator-prod`, `refinery-miner-prod`) as any other prod deploy — it merely also hosts its
 own chain and a miner alongside the validator. The validator therefore reuses the top-level
 `installer/` + `envs/deployed/` machinery unchanged; only its `.env` points at the local chain.
 
-All three machines keep themselves up to date with a 15-minute cron job that re-pulls their
+The optional fourth machine validates the other subnets created on this chain — see
+[§10](#10-multi-subnet-validator--validate-every-subnet-from-netuid-3-up).
+
+All machines keep themselves up to date with a 15-minute cron job that re-pulls their
 docker-compose from the `deploy-config-prod` branch (see [Updates](#7-updates)).
 
 ```
@@ -315,7 +319,7 @@ On **`refinery-miner`**:
 ```bash
 mkdir -p ~/refinery-miner && cd ~/refinery-miner
 curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/miner/.env.example -o .env
-# Edit .env: CHAIN_VLAN_IP=10.0.0.10, MINER_VLAN_IP=10.0.0.30, MINER_AXON_PORT=18000, NETUID=2
+# Edit .env: CHAIN_VLAN_IP=10.0.0.10, MINER_VLAN_IP=10.0.0.30, MINER_AXON_PORT=18000, NETUIDS=2
 nano .env
 
 curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/install.sh \
@@ -323,7 +327,7 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 ```
 
 The miner creates its own wallet (in a `miner-wallets` volume), self-funds from `//Alice`, registers
-on netuid 2, and advertises its axon at `10.0.0.30:18000`. Open `18000` from the validator in your
+on every netuid in `NETUIDS` (here just 2), and advertises its axon at `10.0.0.30:18000` on each of them. Open `18000` from the validator in your
 firewall.
 
 Run a slow miner instead by setting `MINER_RESPONSE_DELAY_S` (e.g. `3`) in `.env` — watch its weight
@@ -371,6 +375,8 @@ restarts the stack **only if the file changed** (i.e. when a new image digest is
   (plus the weekly `REFINERY_LOCALCHAIN_ROCKSDB_LOG` truncation job, see the disk-hygiene note in §2)
 - miner: cron tag `REFINERY_MINER_UPDATE`, compose `deploy/linode/miner/docker-compose.yml`
 - validator: cron tag from the top-level installer, compose `envs/deployed/docker-compose.yml`
+- multi-validator: cron tag `REFINERY_MULTI-VALIDATOR_UPDATE`, compose
+  `deploy/linode/multi-validator/docker-compose.yml`
 
 Each machine updates independently — a validator or miner update never touches the chain machine. The
 chain restarts only when its **own** compose changes, and because its state is persistent that restart
@@ -397,7 +403,9 @@ git push origin master:deploy-build-prod
 
 **Promote the validator image (procedure 2).** As in `knowledge/validator.deploy.md`: resolve the
 digest, smoke-test, pin it into `envs/deployed/docker-compose.yml`, push `master` →
-`deploy-config-prod`.
+`deploy-config-prod`. The multi-validator (§10) runs the same image: pin its digest in the `validator`
+service of `deploy/linode/multi-validator/docker-compose.yml` the same way — the two pins are
+independent, so either machine can be promoted on its own.
 
 **Promote the miner image.** Same shape, for `deploy/linode/miner/docker-compose.yml`:
 
@@ -448,3 +456,97 @@ its DB (subnet, registrations, stake) and the miner keeps its wallet, so `down` 
 you left off. To **fully reset** — wipe all chain state or the miner wallet — use `docker compose down
 -v`, which deletes the volumes. Tearing down the chain machine's volumes discards all subnet state
 (the archive node's history included).
+
+---
+
+## 10. Multi-subnet validator — validate every subnet from netuid 3 up
+
+Other projects create their own subnets on this chain (netuid 3 and up). The `multi-validator` role runs
+**one** Refinery validator on all of them at once, so each of those subnets gets a validator that sets
+weights and the miner machine's miner earns incentive on each. It needs one more machine,
+`refinery-multi-validator` (here `10.0.0.70`; 1 vCPU / 2 GB is enough), set up as in §1, and reuses
+the miner machine: the miner registers on the same subnets and serves all of them from its one axon.
+
+One process covers many subnets like this: each block challenges a miner of the next subnet in
+`NETUIDS`, in turn (with 26 subnets each one gets ~14 challenges per epoch, so a subnet with more miners
+than that leaves some unsampled each epoch), and every subnet has its own epoch clock and weight setter.
+Pylon binds an identity to exactly one netuid, so the compose file starts pylon with one identity per
+subnet (`sn<netuid>`), all backed by the same wallet.
+
+### 10.1 Enroll the validator hotkey (chain machine)
+
+On **`refinery-chain`**, register a dedicated validator hotkey on every subnet from netuid 3 up and give
+it a small stake (a validator permit needs a non-zero stake):
+
+```bash
+mkdir -p ~/refinery-chain/multi-validator && cd ~/refinery-chain/multi-validator
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/multi-validator/enroll.py -o enroll.py
+ENROLL_SUBTENSOR_NETWORK=ws://10.0.0.10:9944 ENROLL_WALLET_DIR="$HOME/refinery-chain/wallets" \
+  uv run enroll.py
+```
+
+It creates the `multi-validator` wallet next to the bootstrap wallets (the coldkey stays on this machine),
+funds it from `//Alice`, registers and stakes 1 TAO on each subnet (~70 s per subnet), and finally
+prints the `NETUIDS=...` line for both `.env` files below. The stake is deliberately tiny: staked TAO is
+swapped into the subnet's alpha pool, and these pools hold only a few thousand TAO, so a large stake
+would move the subnets' prices. The hotkey gets its validator permit at each subnet's next epoch. Like
+bootstrap, creating the wallet prints its mnemonics — devnet keys of no value.
+
+Copy the public coldkey and the hotkey to the validator machine, as in §3:
+
+```bash
+# on refinery-chain
+cd ~/refinery-chain/wallets && tar czf /tmp/multi-validator-wallet.tgz multi-validator/coldkeypub.txt multi-validator/hotkeys/
+# on refinery-multi-validator, after copying the archive over
+mkdir -p ~/.bittensor/wallets && tar xzf multi-validator-wallet.tgz -C ~/.bittensor/wallets
+```
+
+### 10.2 Install the validator
+
+On **`refinery-multi-validator`**:
+
+```bash
+mkdir -p ~/refinery-multi-validator && cd ~/refinery-multi-validator
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/multi-validator/.env.example -o .env
+# Edit .env: NETUIDS (from enroll.py), CHAIN_VLAN_IP, VALIDATOR_VLAN_IP and the two pylon tokens
+nano .env && chmod 600 .env
+
+curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/deploy/linode/install.sh \
+  | bash -s -- multi-validator prod ~/refinery-multi-validator
+```
+
+The validator advertises `http://<VALIDATOR_VLAN_IP>:8001` as its callback URL and the compose file
+publishes `8001` on that IP only; open it to the miner machine.
+
+> **Use a VLAN IP no other machine has.** The chain's ARP entry for a duplicated IP flips between the two
+> machines, so its replies keep landing on the wrong one: idle connections to the chain die after 15-45 s
+> (the other machine answers with a RST) while short requests mostly work. Pylon then hangs on its chain
+> websocket and recreates it in a loop (`recreating_bittensor_contact` bursts, `HTTP 500/504` on
+> `/api/v1/block/latest`). Compare `ip neigh show <ip>` on the chain machine with `ip link` on the
+> validator.
+
+### 10.3 Point the miner at the same subnets
+
+On **`refinery-miner`**, set `NETUIDS` in `~/refinery-miner/.env` to the same list and run
+`docker compose up -d`. On its first start the miner registers on every subnet (~40 s each) before its
+HTTP server comes up; restarts skip subnets it is already registered on. If the miner wallet is shared
+with other tools, give this miner its own wallet with a distinct `MINER_NAME`.
+
+### 10.4 Verify
+
+- `docker compose logs -f validator` on `refinery-multi-validator`: `pow.solution netuid=<n> ...` lines,
+  then once per epoch and subnet `Weights computed for subnet <n> epoch ...` and
+  `weights.set committed netuid=<n>`.
+- Right after every (re)start all the epoch clocks fire at once, before any challenge has been answered,
+  so pylon rejects one empty weight set per subnet (`pipeline.error ... No weights provided`). Real weights
+  follow at each subnet's next epoch boundary, and with commit-reveal they show up on chain one epoch
+  later (see §6).
+- On-chain weights: the §6 snippet with the subnet's netuid instead of `2`.
+
+### 10.5 New subnets and caveats
+
+- **New subnets.** Re-run `enroll.py` (idempotent: it enrolls only what is missing), put the new
+  `NETUIDS` line into both `.env` files and run `docker compose up -d` on both machines.
+- **Memory.** Nexus keeps every pipeline context in memory for the life of the process, so the validator
+  grows slowly; its 768 MB `mem_limit` turns that into an automatic container restart, which costs the
+  current epoch's results (see the empty weights above).

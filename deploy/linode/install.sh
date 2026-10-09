@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Installer for a Refinery Linode deploy role: localchain or miner.
+# Installer for a Refinery Linode deploy role: localchain, miner or multi-validator.
 # Expects a ready .env in the working directory (copy deploy/linode/<ROLE>/.env.example there and edit it
 # before running). Fetches update_compose.sh, runs it once, and installs a cron job that keeps the
 # role's docker-compose.yml in sync with the deploy-config-${ENV_NAME} branch.
 #
-# The validator role is NOT handled here - it uses the top-level installer/install.sh.
+# The single-subnet validator is NOT handled here - it uses the top-level installer/install.sh.
 
 set -euo pipefail
 
-ROLE="${1:?Usage: install.sh <localchain|miner> [ENV_NAME] [WORKING_DIRECTORY]}"
+ROLE="${1:?Usage: install.sh <localchain|miner|multi-validator> [ENV_NAME] [WORKING_DIRECTORY]}"
 ENV_NAME="${2:-prod}"
 WORKING_DIRECTORY="${3:-$HOME/refinery-${ROLE}/}"
 
 case "${ROLE}" in
-    localchain|miner) ;;
-    *) echo "Unsupported role: ${ROLE} (expected localchain or miner)" >&2; exit 1 ;;
+    localchain|miner|multi-validator) ;;
+    *) echo "Unsupported role: ${ROLE} (expected localchain, miner or multi-validator)" >&2; exit 1 ;;
 esac
 
 mkdir -p "${WORKING_DIRECTORY}"

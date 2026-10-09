@@ -29,7 +29,8 @@ This is a monorepo with two **independent** uv projects plus shared local-develo
 - `deploy/` — multi-machine deployments, one subdirectory per environment. `deploy/linode/` is the
   three-machine Linode deployment (chain + validator + miner over a private VLAN): chain and miner
   docker-compose files, a shared role-parametrized installer/updater, and a step-by-step `README.md`.
-  The validator role reuses `installer/` + `envs/deployed/`. See `deploy/linode/README.md`
+  The validator role reuses `installer/` + `envs/deployed/`; the optional `multi-validator` role runs one
+  validator on every subnet from netuid 3 up. See `deploy/linode/README.md`
 - `.github/workflows/` — Copier-templated CI; `build-validator.yml.jinja` and `build-miner.yml.jinja`
   build and push the validator and miner images to a registry on push to `deploy-build-*` branches
 - `copier.yml` — Copier question schema for adapting this template to a concrete subnet

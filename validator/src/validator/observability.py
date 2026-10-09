@@ -19,6 +19,7 @@ from nexus.v1 import (
     Context,
     ContextStore,
     ExecutorFailureTaskResult,
+    NetUid,
     NexusException,
     Node,
     NodeSinks,
@@ -90,7 +91,8 @@ def log_solution(_ctx: Context, result: SuccessfulTaskResult[PowChallenge, PowSo
     solution = result.executor_output
     latency_s = (result.processing_finished - result.processing_started).total_seconds()
     logger.info(
-        "pow.solution hotkey=%s uid=%s valid=%s latency_s=%.3f difficulty=%s block=%s",
+        "pow.solution netuid=%s hotkey=%s uid=%s valid=%s latency_s=%.3f difficulty=%s block=%s",
+        challenge.netuid,
         result.target.hotkey,
         result.target.uid,
         solution_is_valid(challenge.seed, solution.nonce, challenge.difficulty),
@@ -103,7 +105,8 @@ def log_solution(_ctx: Context, result: SuccessfulTaskResult[PowChallenge, PowSo
 def log_failure(_ctx: Context, result: ExecutorFailureTaskResult[PowChallenge]) -> None:
     """Log a miner that failed to answer in time (e.g. timed out) for this challenge."""
     logger.warning(
-        "pow.failure hotkey=%s uid=%s block=%s error=%r",
+        "pow.failure netuid=%s hotkey=%s uid=%s block=%s error=%r",
+        result.executor_payload.netuid,
         result.target.hotkey,
         result.target.uid,
         result.block_at_finish.block_number,
@@ -116,9 +119,12 @@ def log_pipeline_error(ctx: Context, error: NexusException) -> None:
     logger.error("pipeline.error ctx=%s: %r", ctx.id, error, exc_info=error)
 
 
-def log_weights_set(_ctx: Context, _result: WeightSettingSuccess) -> None:
-    """Log a successful on-chain weight commit (per-miner detail is logged by the weighing function)."""
-    logger.info("weights.set committed")
+def log_weights_set(netuid: NetUid, _ctx: Context, _result: WeightSettingSuccess) -> None:
+    """Log a successful on-chain weight commit on the subnet (per-miner detail is logged by the weighing function).
+
+    Bind the subnet with ``functools.partial`` to get a ``SinkLoggerNode`` callback.
+    """
+    logger.info("weights.set committed netuid=%s", netuid)
 
 
 def discard(_ctx: Context, _payload: object) -> None:
