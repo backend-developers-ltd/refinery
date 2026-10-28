@@ -40,10 +40,12 @@ third-party image in the stack (pylon, anything else). There is no "but this
 tag is semver, so it's safe" exception — the registry doesn't care about
 semver.
 
-> Some observability sidecars currently ship pinned only by tag (`cadvisor:v0.40.0`,
-> `node-exporter:latest`, and `bittensor_prometheus:latest`) rather than by digest.
-> This is a known gap, not an endorsement: when hardening the deploy, pin these by
-> `@sha256` too via Procedure 3. The Alloy traces sidecar is already pinned by digest.
+> One observability sidecar currently ships pinned only by tag (`node-exporter:latest`,
+> with `pull_policy: always`) rather than by digest: its newest release still trusts the
+> compromised emSign CA, so it floats until upstream ships a fixed build.
+> This is a known gap, not an endorsement: once that build exists, pin it by
+> `@sha256` too via Procedure 3. Every other service, including the Alloy traces
+> sidecar, is already pinned by digest.
 
 ## The traces sidecar (Alloy)
 

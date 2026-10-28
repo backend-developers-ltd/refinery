@@ -11,11 +11,12 @@ services:
       retries: 10
 
   pylon:
-    image: backenddevelopersltd/bittensor-pylon:2.1.0
+    image: backenddevelopersltd/bittensor-pylon:2.3.4
     ports:
       - "8000:8000"
     environment:
       PYLON_BITTENSOR_NETWORK: "ws://subtensor:9944"
+      PYLON_BITTENSOR_ARCHIVE_NETWORK: "ws://subtensor:9944"
       PYLON_OPEN_ACCESS_TOKEN: "${VALIDATOR_PYLON_OPEN_ACCESS_TOKEN:?}"
       PYLON_IDENTITIES: '["${VALIDATOR_PYLON_IDENTITY_NAME:?}"]'
       PYLON_BITTENSOR_WALLET_PATH: "/wallets"

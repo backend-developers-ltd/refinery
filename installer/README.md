@@ -40,6 +40,8 @@ This will:
 On first run the installer asks for:
 
 - `BITTENSOR_NETWORK` (default `local`)
+- `BITTENSOR_ARCHIVE_NETWORK` (default `archive` when `BITTENSOR_NETWORK` is `finney`, otherwise the same
+  value as `BITTENSOR_NETWORK`)
 - `HOST_WALLET_DIR` (default `~/.bittensor/wallets`)
 - `BITTENSOR_WALLET_NAME` (default `validator`)
 - `BITTENSOR_WALLET_HOTKEY_NAME` (default `default`)
@@ -51,6 +53,9 @@ Written to `<WORKING_DIRECTORY>/.env` on first run:
 
 - `NETUID` — subnet netuid (default: `1`).
 - `BITTENSOR_NETWORK` — Bittensor network address (e.g. `finney`, `ws://localhost:9944`).
+- `BITTENSOR_ARCHIVE_NETWORK` — archive node pylon uses for blocks older than ~300 blocks (e.g. `archive`,
+  `ws://localhost:9944`). Pylon requires it whenever `BITTENSOR_NETWORK` is set; an `.env` written by an older
+  installer lacks it, and the compose file then falls back to `BITTENSOR_NETWORK`.
 - `BITTENSOR_WALLET_NAME` / `BITTENSOR_WALLET_HOTKEY_NAME` — wallet identifiers consumed by pylon.
 - `HOST_WALLET_DIR` — host-side path to the Bittensor wallets directory (mounted read-only into pylon).
 - `ENVIRONMENT` — OpenTelemetry `deployment.environment.name` resource attribute stamped on traces and
