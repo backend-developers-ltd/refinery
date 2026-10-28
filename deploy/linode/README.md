@@ -211,11 +211,14 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 
 The chain is now serving on `ws://10.0.0.10:9944` (VLAN only; historical state on `ws://10.0.0.10:9945`),
 running standard **12s blocks** with **persistent state** (survives restarts/reboots). Next, **bootstrap the subnet once**:
-create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv`:
+create the subnet, set its hyperparameters, and register + stake the validator. This needs `uv` >= 0.13.4
+(older uv trusts the compromised emSign roots compiled into its binary; upgrade an existing one with
+`uv self update`):
 
 ```bash
 # Install uv (one-time)
 curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.profile
+uv --version  # must be >= 0.13.4
 
 # Fetch and run the bootstrap script against the local chain (via its VLAN IP)
 curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads/deploy-config-prod/localnet/bootstrap.py -o bootstrap.py
@@ -350,7 +353,7 @@ distinct `MINER_NAME` and `MINER_VLAN_IP`).
 - **On-chain weights** — from any machine on the VLAN (needs `uv`):
 
   ```bash
-  uv run --with 'bittensor==10.3.0' python -c "
+  uv run --with 'bittensor==10.3.0' --with 'certifi>=2026.10.19' python -c "
   import bittensor as bt
   st = bt.Subtensor(network='ws://10.0.0.10:9944')
   for k, v in st.query_map('SubtensorModule', 'Weights', [2]):
