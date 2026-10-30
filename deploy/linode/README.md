@@ -180,17 +180,18 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > 24 days, the compaction thread at 90% of each node's CPU and RocksDB's info `LOG` growing 180 MB/day per
 > node. 256 gives each side column 2 MiB for ~210 MB of RocksDB memory per node. If an image bump changes
 > `localnet.sh` so the patch stops applying, the container refuses to start and logs `FATAL: expected to
-> cap 3 authorities' caches`. Note that an OOM kill lands on a single `node-subtensor`, never on PID 1, so
-> the container can stay "up" with 2/3 authorities — below GRANDPA's quorum — while the chain quietly
-> stops finalizing; check `docker compose exec subtensor pgrep -c node-subtensor` (expect `3`) and
-> `docker compose restart subtensor` to recover.
+> cap 3 authorities' caches`. Note that an OOM kill lands on a single `node-subtensor`, never on PID 1;
+> `localnet.sh` then stops the other two authorities and exits, so `restart: unless-stopped` brings all
+> three back together and the chain does not sit below GRANDPA's quorum. Repeated restarts therefore mean
+> repeated OOM kills: check `docker inspect -f '{{.RestartCount}}' <container>`.
 
 > **Archive node.** The three authorities keep only the last ~256 blocks of *state* (Substrate's
 > default state pruning, fixed when the DB is created — it cannot be switched on an existing DB), so
 > reading older state fails with `State already discarded`. Readers that backfill history (the TAO20
 > attester's 8-day price windows) use the separate `archive` service instead: a non-validating full node
 > with `--state-pruning archive` that syncs every block from genesis off authority One (bootnode peer id
-> derived from One's persisted node key, chain spec rebuilt from the same binary) and serves
+> derived from One's persisted node key, chain spec from `chain-spec/local.json` when the host froze one,
+> otherwise rebuilt from the same binary; see §7) and serves
 > `ws://10.0.0.10:9945`. It is a pure reader — if it dies, block production and finality are untouched,
 > and on restart it resumes syncing; `docker compose logs archive` should show it importing at the
 > authorities' height. A bounded window (`--state-pruning 72000`, RocksDb or ParityDb) is not viable on
@@ -383,9 +384,33 @@ restarts the stack **only if the file changed** (i.e. when a new image digest is
 
 Each machine updates independently — a validator or miner update never touches the chain machine. The
 chain restarts only when its **own** compose changes, and because its state is persistent that restart
-no longer wipes the subnet. One caveat: bumping the chain to an image with a **different genesis** would
-make the persisted DB incompatible (the node would fail to start on the old volumes); a deliberate genesis
-change therefore requires a one-time `docker compose down -v` + re-bootstrap, not just an image bump.
+no longer wipes the subnet.
+
+**Bumping the chain image.** A bump replaces only the node binary. A node with a persisted DB keeps that
+DB's genesis and the runtime stored on chain, even though `localnet.sh` regenerates the chain spec from the
+new image on every start. A node starting from an **empty** volume (a rebuilt `chain_archive`, a lost
+authority volume) does take its genesis from that spec, and the spec embeds the image's runtime. After a
+bump to a newer runtime such a node therefore creates a separate chain: it stays at block 0 with 0 peers
+and logs `is on a different chain`.
+
+To keep those nodes on the existing chain, freeze the raw spec of the image that created the chain, **before
+the first bump**. Both services use `chain-spec/local.json` next to the compose file when it exists. For the
+chain created by the `opentensor` image, before the move to `raofoundation`:
+
+```bash
+cd ~/refinery-chain && mkdir -p chain-spec
+docker run --rm --entrypoint /target/non-fast-runtime/release/node-subtensor \
+  ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2 \
+  build-spec --disable-default-bootnode --raw --chain local > chain-spec/local.json
+```
+
+Back the file up: once that image is gone from the registry, it cannot be regenerated. A brand-new chain
+needs no such file; its genesis comes from the image.
+
+Moving the chain to a newer runtime is a separate step: `System.set_code` through `Sudo`, with the new image's
+`node_subtensor_runtime.compact.compressed.wasm`. It cannot be undone except by restoring the volumes, so
+back them up and rehearse on a copy first. Compiling the new runtime can exceed the `mem_limit`s: in a
+test on a fresh chain both services were OOM-killed once and came back through their restart policy.
 
 Force an update now: re-run the relevant `install.sh`/`update_compose.sh`, or
 `cd <workdir> && docker compose pull && docker compose up -d`.
@@ -458,7 +483,8 @@ Per machine: `cd <workdir> && docker compose down` and remove the cron line
 its DB (subnet, registrations, stake) and the miner keeps its wallet, so `down` + `up -d` resumes where
 you left off. To **fully reset** — wipe all chain state or the miner wallet — use `docker compose down
 -v`, which deletes the volumes. Tearing down the chain machine's volumes discards all subnet state
-(the archive node's history included).
+(the archive node's history included). Delete `chain-spec/local.json` as well if the new chain should take
+its genesis from the current image instead of the frozen spec (§7).
 
 ---
 

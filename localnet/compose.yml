@@ -1,6 +1,6 @@
 services:
   subtensor:
-    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    image: ghcr.io/raofoundation/subtensor-localnet:v486
     ports:
       - "9944:9944"
       - "9933:9933"
