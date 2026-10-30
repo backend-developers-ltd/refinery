@@ -26,9 +26,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv]
+required-version = ">=0.13.4"
 # This exclusion is a crucial security measure and MUST NOT be relaxed.
 # This is intended to help avoid pulling in freshly published compromised dependencies.
 exclude-newer = "11 days"
+exclude-newer-package = { certifi = false, pip = false }
+constraint-dependencies = ["certifi>=2026.10.19", "pip>=26.2.2"]
 
 [tool.uv.sources]
 bittensor-nexus-library = { git = "https://github.com/bittensor-church/bittensor-nexus-library.git" }

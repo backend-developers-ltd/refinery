@@ -2,7 +2,7 @@ ARG BASE_IMAGE=python:3.14-slim
 
 FROM $BASE_IMAGE AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
 
 WORKDIR /build
 

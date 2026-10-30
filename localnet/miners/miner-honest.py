@@ -5,6 +5,7 @@
 #     # parse. Keep in sync with localnet/bootstrap.py and miner/uv.lock.
 #     "bittensor==10.3.0",
 #     "bittensor-wallet==4.0.1",
+#     "certifi>=2026.10.19",
 #     "litestar[standard]",
 #     "httpx",
 #     "click",

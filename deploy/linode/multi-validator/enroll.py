@@ -4,6 +4,7 @@
 #     # Same pins as localnet/bootstrap.py: pylon cannot parse keyfiles written by bittensor-wallet 4.1.0+.
 #     "bittensor==10.3.0",
 #     "bittensor-wallet==4.0.1",
+#     "certifi>=2026.10.19",
 # ]
 # ///
 """
