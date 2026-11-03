@@ -17,6 +17,10 @@ esac
 mkdir -p "${WORKING_DIRECTORY}"
 cd "${WORKING_DIRECTORY}"
 
+if [ "${ROLE}" = "localchain" ]; then
+    mkdir -p chain-spec
+fi
+
 GITHUB_URL="https://raw.githubusercontent.com/backend-developers-ltd/refinery/refs/heads"
 
 TEMP_FILE="$(mktemp "${TMPDIR:-/tmp}/refinery_compose_update.XXXXXX.yml")"

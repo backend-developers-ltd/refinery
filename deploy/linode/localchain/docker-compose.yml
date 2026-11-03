@@ -9,9 +9,9 @@ x-logging: &bounded-logging
 
 services:
   subtensor:
-    # ghcr.io/opentensor/subtensor-localnet - bump by re-resolving the tag's digest
+    # ghcr.io/raofoundation/subtensor-localnet:v486 - bump by re-resolving the tag's digest
     # (docker buildx imagetools inspect ... --format '{{json .Manifest.Digest}}').
-    image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    image: ghcr.io/raofoundation/subtensor-localnet@sha256:597778ceb7de7e39e60545a7e5f18829ca1530d8e5be7e097c17cf404e742ff0
     # The image's /scripts/localnet.sh hardcodes each authority's argv and accepts no extra node flags,
     # so this wrapper patches the caches in before handing over to it.
     entrypoint:
@@ -46,6 +46,14 @@ services:
           exit 1
         fi
 
+        if [ -f /chain-spec/local.json ]; then
+          sed -i 's|^"$$NODE_BINARY" build-spec .*|cp /chain-spec/local.json "$$FULL_PATH"|' /scripts/localnet.sh
+          if ! grep -q '^cp /chain-spec/local.json' /scripts/localnet.sh; then
+            echo "FATAL: could not apply the frozen chain spec - localnet.sh changed upstream" >&2
+            exit 1
+          fi
+        fi
+
         exec /scripts/localnet.sh "$$@"
       - refinery-localchain
     # "False" selects the non-fast-runtime binary baked into the image -> standard 12s blocks (like
@@ -74,6 +82,7 @@ services:
       - chain_one:/tmp/one
       - chain_two:/tmp/two
       - chain_three:/tmp/three
+      - ./chain-spec:/chain-spec:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9944'"]
       interval: 5s
@@ -93,7 +102,7 @@ services:
   # remedy, so watch the volume. Never an authority, so losing it cannot affect block production or
   # finality.
   archive:
-    image: ghcr.io/opentensor/subtensor-localnet@sha256:3c2122aa1fe77b8a771dee921dd44b0102584daf77bb00cfdb8c4ca301b74bd2
+    image: ghcr.io/raofoundation/subtensor-localnet@sha256:597778ceb7de7e39e60545a7e5f18829ca1530d8e5be7e097c17cf404e742ff0
     depends_on:
       - subtensor
     entrypoint:
@@ -103,9 +112,14 @@ services:
         set -euo pipefail
         BIN=/target/non-fast-runtime/release/node-subtensor
 
-        # Same binary and the same `build-spec --chain local` call as the image's localnet.sh -> a
-        # byte-identical spec, i.e. the same genesis as the authorities.
-        "$$BIN" build-spec --disable-default-bootnode --raw --chain local > /tmp/local.json
+        # The authorities' frozen spec when the host has one (see the README), otherwise the same binary
+        # and the same `build-spec --chain local` call as the image's localnet.sh -> a byte-identical
+        # spec, i.e. the same genesis as the authorities.
+        if [ -f /chain-spec/local.json ]; then
+          cp /chain-spec/local.json /tmp/local.json
+        else
+          "$$BIN" build-spec --disable-default-bootnode --raw --chain local > /tmp/local.json
+        fi
 
         # The bootnode address embeds authority One's peer id; derive it from One's persisted node key
         # (read-only mount) instead of pinning it here, so a regenerated key never strands this node.
@@ -135,6 +149,7 @@ services:
     volumes:
       - chain_archive:/tmp/archive
       - chain_one:/one:ro
+      - ./chain-spec:/chain-spec:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9945'"]
       interval: 5s

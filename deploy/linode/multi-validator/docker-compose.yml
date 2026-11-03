@@ -8,8 +8,8 @@ x-logging: &bounded-logging
 
 services:
   pylon:
-    # backenddevelopersltd/bittensor-pylon:2.3.2 - bump by re-resolving the tag's digest.
-    image: backenddevelopersltd/bittensor-pylon@sha256:6d6dd6a79bb313f0bdd6b2833f193ac16b59738eee6138652d4418a8da0dd352
+    # backenddevelopersltd/bittensor-pylon:2.3.4 - bump by re-resolving the tag's digest.
+    image: backenddevelopersltd/bittensor-pylon@sha256:2e7a3470b1ff6f4a72f53a075c1f215cd352a0d289387bad10f328825f396dbb
     restart: unless-stopped
     mem_limit: 512m
     logging: *bounded-logging
@@ -42,7 +42,7 @@ services:
 
   validator:
     # Pinned on promotion - see deploy/linode/README.md ("Promote the validator image").
-    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:65db829cbae4cd8f6562160e9054f7ce1b46d6454591cddf79c983412e273517
     restart: unless-stopped
     # Nexus keeps every pipeline context in memory for the process lifetime. The cap turns that slow
     # growth into a container restart (losing the current epoch's results) before it starves the host.
