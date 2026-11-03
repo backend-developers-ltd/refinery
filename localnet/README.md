@@ -10,7 +10,7 @@ miners by correctness (gate) and speed (bonus). Run the miner fixtures below wit
 ## Prerequisites
 
 - Docker and Docker Compose
-- uv
+- uv >= 0.13.4 (older uv trusts the compromised emSign roots compiled into its binary; `uv self update`)
 
 ## Setup (one-time)
 
