@@ -195,7 +195,9 @@ curl -fsSL https://raw.githubusercontent.com/backend-developers-ltd/refinery/ref
 > `ws://10.0.0.10:9945`. It is a pure reader — if it dies, block production and finality are untouched,
 > and on restart it resumes syncing; `docker compose logs archive` should show it importing at the
 > authorities' height. A bounded window (`--state-pruning 72000`, RocksDb or ParityDb) is not viable on
-> this box: the node keeps ~65 KB of RAM per block of the window and OOMs at its 1 GiB cap. The archive
+> this box: the node keeps ~65 KB of RAM per block of the window and OOMed at its then 1 GiB cap. The
+> archive itself runs under a 2 GB `mem_limit`: on the opentensor node it stayed flat at ~530 MiB, the
+> `raofoundation` v486 node outgrew 1 GiB within minutes of the bump. The archive
 > instead costs **disk**: it keeps every trie node ever written, ~60 KB of state per idle block, i.e.
 > ~0.4 GB/day (up to ~150 KB/block while the Drand pallet catches up). A resync from genesis rebuilds
 > exactly that history, so deleting the `chain_archive` volume only reclaims RocksDB slack (WAL,
