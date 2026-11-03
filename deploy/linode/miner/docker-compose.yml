@@ -1,7 +1,7 @@
 services:
   miner:
     # Replaced with a real digest on first promotion - see deploy/README.md ("Promote the miner image").
-    image: ghcr.io/backend-developers-ltd/refinery-miner-${ENVIRONMENT:?}@sha256:4d728f3e5d02c7de2cab094941b721f97ff0eb46c0f300907ca18bc44986296b
+    image: ghcr.io/backend-developers-ltd/refinery-miner-${ENVIRONMENT:?}@sha256:c4e62ecbb7c4a91b81e9761c32804eeef2d049d0694b8000586b51cf34094ade
     restart: unless-stopped
     env_file: ./.env
     environment:

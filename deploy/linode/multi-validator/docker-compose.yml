@@ -42,7 +42,7 @@ services:
 
   validator:
     # Pinned on promotion - see deploy/linode/README.md ("Promote the validator image").
-    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:65db829cbae4cd8f6562160e9054f7ce1b46d6454591cddf79c983412e273517
+    image: ghcr.io/backend-developers-ltd/refinery-validator-${ENVIRONMENT:?}@sha256:8b30cbbe9bf6113a1012d315de0bb0e2a0b38d74bc4701fbbb6367f0f51051bf
     restart: unless-stopped
     # Nexus keeps every pipeline context in memory for the process lifetime. The cap turns that slow
     # growth into a container restart (losing the current epoch's results) before it starves the host.
