@@ -8,8 +8,8 @@ x-logging: &bounded-logging
 
 services:
   pylon:
-    # backenddevelopersltd/bittensor-pylon:2.3.2 - bump by re-resolving the tag's digest.
-    image: backenddevelopersltd/bittensor-pylon@sha256:6d6dd6a79bb313f0bdd6b2833f193ac16b59738eee6138652d4418a8da0dd352
+    # backenddevelopersltd/bittensor-pylon:2.3.4 - bump by re-resolving the tag's digest.
+    image: backenddevelopersltd/bittensor-pylon@sha256:2e7a3470b1ff6f4a72f53a075c1f215cd352a0d289387bad10f328825f396dbb
     restart: unless-stopped
     mem_limit: 512m
     logging: *bounded-logging

@@ -6,6 +6,7 @@
 #     # set_weights ("Failed to parse keyfile data"). Keep in sync with miner/uv.lock and pylon.
 #     "bittensor==10.3.0",
 #     "bittensor-wallet==4.0.1",
+#     "certifi>=2026.10.19",
 #     "python-dotenv",
 # ]
 # ///

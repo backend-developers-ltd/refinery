@@ -1,11 +1,12 @@
 services:
   pylon:
-    # backenddevelopersltd/bittensor-pylon:2.1.0 - bump via knowledge/validator.deploy.md (Procedure 3).
-    image: backenddevelopersltd/bittensor-pylon@sha256:19372a57b1316b340971094aa067a6e39a957d6903dec2cd8b7f1d0335d9e0ad
+    # backenddevelopersltd/bittensor-pylon:2.3.4 - bump via knowledge/validator.deploy.md (Procedure 3).
+    image: backenddevelopersltd/bittensor-pylon@sha256:2e7a3470b1ff6f4a72f53a075c1f215cd352a0d289387bad10f328825f396dbb
     restart: unless-stopped
     env_file: ./.env
     environment:
       PYLON_BITTENSOR_NETWORK: "${BITTENSOR_NETWORK:?}"
+      PYLON_BITTENSOR_ARCHIVE_NETWORK: "${BITTENSOR_ARCHIVE_NETWORK:-${BITTENSOR_NETWORK:?}}"
       PYLON_OPEN_ACCESS_TOKEN: "${VALIDATOR_PYLON_OPEN_ACCESS_TOKEN:?}"
       PYLON_IDENTITIES: '["validator"]'
       PYLON_BITTENSOR_WALLET_PATH: "/wallets"
@@ -39,7 +40,8 @@ services:
       - alloy
 
   alloy:
-    image: grafana/alloy@sha256:1f40cf52adda8fab3e058f9347a5d165624ecb9fbc1527769cb744748961940d
+    # grafana/alloy:v1.21.2
+    image: grafana/alloy@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
     restart: unless-stopped
     environment:
       # Alloy talks only to the local proxy. The proxy adds the wallet identity,
@@ -56,7 +58,8 @@ services:
       - prometheus-proxy
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.40.0
+    # ghcr.io/google/cadvisor:v0.60.6
+    image: ghcr.io/google/cadvisor@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
     restart: unless-stopped
     devices:
       - /dev/kmsg:/dev/kmsg
@@ -69,6 +72,7 @@ services:
 
   node-exporter:
     image: prom/node-exporter:latest
+    pull_policy: always
     restart: unless-stopped
     network_mode: host
     pid: host
@@ -80,7 +84,8 @@ services:
       - '--collector.tcpstat'
 
   prometheus:
-    image: backenddevelopersltd/bittensor_prometheus:latest
+    # backenddevelopersltd/bittensor_prometheus:1.0.3
+    image: backenddevelopersltd/bittensor_prometheus@sha256:35112f61ffdeb2627f6626ad5ce6cabf0d1598e63f6758cd0b81cd28b494767a
     restart: unless-stopped
     env_file: ./.env
     depends_on:
@@ -118,7 +123,8 @@ services:
 
 
   prometheus-proxy:
-    image: ghcr.io/bittensor-church/bittensor-prometheus-proxy@sha256:d4ff25525b663e8a71d637261fda05739916a0a064d6a480ad60466cd488386b
+    # ghcr.io/bittensor-church/bittensor-prometheus-proxy:1.0.3
+    image: ghcr.io/bittensor-church/bittensor-prometheus-proxy@sha256:39caeb310b1b29baef8e7794157fa66953e0e610e9bd712589bb84bf7cff2286
     restart: unless-stopped
     environment:
       CENTRAL_PROMETHEUS_PROXY_URL: "https://prometheus.bactensor.io"

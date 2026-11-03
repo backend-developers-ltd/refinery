@@ -20,7 +20,7 @@ deployment_phases:
     network: "wss://entrypoint-finney.opentensor.ai:443"
 
 recommended_deployment:
-  pattern: "Docker + Watchtower auto-update"
+  pattern: "Docker + digest-pinned compose file + cron updater (pull, then up -d)"
   
   benefits:
     - automatic_updates
@@ -35,14 +35,14 @@ recommended_deployment:
     3: "push to Docker Hub :latest"
   
   validator_workflow:
-    1: "Watchtower checks every 5 minutes"
-    2: "detects new image"
-    3: "pulls and restarts container"
+    1: "cron updater fetches the reviewed docker-compose.yml (new image digest)"
+    2: "docker compose pull"
+    3: "docker compose up -d restarts the changed services"
 
 docker_compose_template: |
   services:
     validator:
-      image: subnetowner/mysubnet:latest
+      image: subnetowner/mysubnet@sha256:<digest>
       restart: unless-stopped
       environment:
         - NETWORK=finney
@@ -51,16 +51,6 @@ docker_compose_template: |
         - HOTKEY_NAME=default
       volumes:
         - ~/.bittensor/wallets:/root/.bittensor/wallets:ro
-    
-    watchtower:
-      image: containrrr/watchtower:latest
-      restart: unless-stopped
-      environment:
-        - WATCHTOWER_POLL_INTERVAL=300
-        - WATCHTOWER_CLEANUP=true
-        - WATCHTOWER_ROLLING_RESTART=true
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
 
 github_actions_workflow:
   trigger: "push to main"
@@ -137,10 +127,9 @@ emergency_procedures:
   rollback:
     steps:
       1: "stop container"
-      2: "find previous SHA tag"
-      3: "update docker-compose.yml with specific tag"
+      2: "find the previous image digest"
+      3: "pin it in the reviewed docker-compose.yml so the updater keeps it"
       4: "restart"
-      5: "disable watchtower for container temporarily"
   
   subnet_emergency:
     disable_registrations: |
